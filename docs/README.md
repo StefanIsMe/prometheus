@@ -1,6 +1,6 @@
-# Strix Documentation
+# prometheus Documentation
 
-Documentation source files for Strix, powered by [Mintlify](https://mintlify.com).
+Documentation source files for prometheus, powered by [Mintlify](https://mintlify.com).
 
 ## Local Preview
 

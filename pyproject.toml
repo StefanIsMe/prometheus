@@ -1,12 +1,12 @@
 [project]
-name = "strix-agent"
+name = "prometheus-agent"
 version = "1.0.0"
-description = "Open-source AI Hackers for your apps"
+description = "AI-powered security scanner, validator, and novel threat discoverer"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
 authors = [
-  { name = "Strix", email = "hi@usestrix.com" },
+  { name = "Prometheus", email = "hi@useprometheus.com" },
 ]
 keywords = [
   "cybersecurity",
@@ -45,7 +45,7 @@ dependencies = [
 ]
 
 [project.scripts]
-strix = "strix.interface.main:main"
+prometheus = "prometheus.interface.main:main"
 
 [dependency-groups]
 dev = [
@@ -62,7 +62,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["strix"]
+packages = ["prometheus"]
 
 # ============================================================================
 # Type Checking Configuration
@@ -187,18 +187,18 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Lazy imports inside functions to avoid circular dependency with
-# strix.telemetry / strix.report.dedupe / cvss.
-"strix/tools/notes/tools.py" = ["PLC0415", "TC002"]
-"strix/tools/finish/tool.py" = ["PLC0415", "TC002"]
-"strix/tools/reporting/tool.py" = ["PLC0415", "TC002"]
-"strix/tools/**/*.py" = [
+# prometheus.telemetry / prometheus.report.dedupe / cvss.
+"prometheus/tools/notes/tools.py" = ["PLC0415", "TC002"]
+"prometheus/tools/finish/tool.py" = ["PLC0415", "TC002"]
+"prometheus/tools/reporting/tool.py" = ["PLC0415", "TC002"]
+"prometheus/tools/**/*.py" = [
     "ARG001", # Unused function argument (tools may have unused args for interface consistency)
 ]
 # Custom Docker subclass duplicates parent body; some imports are for annotations.
 # Backend factories import their backend's deps lazily so deployments
 # that pick a different backend don't need every backend's libs installed.
-"strix/runtime/backends.py" = ["PLC0415"]
-"strix/runtime/docker_client.py" = [
+"prometheus/runtime/backends.py" = ["PLC0415"]
+"prometheus/runtime/docker_client.py" = [
     "TC002",  # Manifest, Container imported for annotations
     "TC003",  # uuid imported for annotation
 ]
@@ -206,33 +206,33 @@ ignore = [
 # time to derive the JSON schema, which evaluates annotations at runtime —
 # so RunContextWrapper / Tool / TResponseInputItem must be imported eagerly,
 # not under TYPE_CHECKING.
-"strix/tools/todo/tools.py" = ["TC002"]
-"strix/tools/thinking/tool.py" = ["TC002"]
-"strix/tools/web_search/tool.py" = ["TC002"]
-"strix/tools/proxy/tools.py" = ["TC002", "PLR0911"]
-"strix/tools/agents_graph/tools.py" = ["TC002"]
-"strix/agents/factory.py" = ["TC002"]
+"prometheus/tools/todo/tools.py" = ["TC002"]
+"prometheus/tools/thinking/tool.py" = ["TC002"]
+"prometheus/tools/web_search/tool.py" = ["TC002"]
+"prometheus/tools/proxy/tools.py" = ["TC002", "PLR0911"]
+"prometheus/tools/agents_graph/tools.py" = ["TC002"]
+"prometheus/agents/factory.py" = ["TC002"]
 # Entry point: ``Path`` is used at runtime by the typing of the
 # session_manager call; importing under TYPE_CHECKING would defer
 # resolution past where mypy needs it.
-"strix/core/runner.py" = ["TC003", "PLR0912", "PLR0915", "PLC0415"]
+"prometheus/core/runner.py" = ["TC003", "PLR0912", "PLR0915", "PLC0415"]
 # ReportState carries scan artifact/report fields and
 # a runtime ``Callable`` annotation on ``vulnerability_found_callback``.
-"strix/report/state.py" = ["TC003", "PLR0912", "PLR0915", "E501", "PERF401"]
+"prometheus/report/state.py" = ["TC003", "PLR0912", "PLR0915", "E501", "PERF401"]
 # Interface utility branches per scope-mode / target-type combination;
 # splitting would obscure the decision tree without simplifying it.
-"strix/interface/utils.py" = ["PLR0912", "BLE001", "PLC0415"]
+"prometheus/interface/utils.py" = ["PLR0912", "BLE001", "PLC0415"]
 # CLI / TUI / main keep extensive lazy imports + broad exception
 # swallows for resilience around terminal-rendering errors.
-"strix/interface/cli.py" = ["BLE001", "PLC0415"]
-"strix/interface/tui/app.py" = ["BLE001", "PLC0415", "PLR0912", "PLR0915", "SIM105"]
-"strix/interface/main.py" = ["BLE001", "PLC0415", "PLR0912", "PLR0915"]
-"strix/interface/tui/renderers/agent_message_renderer.py" = ["PLC0415"]
+"prometheus/interface/cli.py" = ["BLE001", "PLC0415"]
+"prometheus/interface/tui/app.py" = ["BLE001", "PLC0415", "PLR0912", "PLR0915", "SIM105"]
+"prometheus/interface/main.py" = ["BLE001", "PLC0415", "PLR0912", "PLR0915"]
+"prometheus/interface/tui/renderers/agent_message_renderer.py" = ["PLC0415"]
 
 [tool.ruff.lint.isort]
 force-single-line = false
 lines-after-imports = 2
-known-first-party = ["strix"]
+known-first-party = ["prometheus"]
 known-third-party = ["pydantic"]
 
 [tool.ruff.lint.pylint]
@@ -249,7 +249,7 @@ line-ending = "auto"
 # ============================================================================
 
 [tool.pyright]
-include = ["strix"]
+include = ["prometheus"]
 exclude = ["**/__pycache__", "build", "dist"]
 pythonVersion = "3.12"
 pythonPlatform = "Linux"
@@ -308,7 +308,7 @@ include_trailing_comma = true
 force_grid_wrap = 0
 use_parentheses = true
 ensure_newline_before_comments = true
-known_first_party = ["strix"]
+known_first_party = ["prometheus"]
 known_third_party = ["pydantic", "litellm"]
 
 # ============================================================================

@@ -1,0 +1,1350 @@
+Screen {
+    background: #000000;
+    color: #d4d4d4;
+}
+
+.screen--selection {
+    background: #2d3d2f;
+    color: #e5e5e5;
+}
+
+ToastRack {
+    dock: top;
+    align: right top;
+    margin-bottom: 0;
+    margin-top: 1;
+}
+
+Toast {
+    width: 25;
+    background: #000000;
+    border-left: outer #22c55e;
+}
+
+Toast.-information .toast--title {
+    color: #22c55e;
+}
+
+#splash_screen {
+    height: 100%;
+    width: 100%;
+    background: #000000;
+    color: #22c55e;
+    align: center middle;
+    content-align: center middle;
+    text-align: center;
+}
+
+#splash_content {
+    width: auto;
+    height: auto;
+    background: transparent;
+    text-align: center;
+    content-align: center middle;
+    padding: 2;
+}
+
+#main_container {
+    height: 100%;
+    padding: 0;
+    margin: 0;
+    background: #000000;
+}
+
+#main_tabs {
+    height: 1fr;
+    background: transparent;
+}
+
+#main_tabs > .tabs {
+    height: 1;
+    background: #0a0a0a;
+    border-bottom: solid #1a1a1a;
+}
+
+#main_tabs > .tabs > .tab {
+    height: 1;
+    width: auto;
+    padding: 0 2;
+    color: #737373;
+    background: transparent;
+    text-style: none;
+}
+
+#main_tabs > .tabs > .tab.-active {
+    color: #22c55e;
+    background: transparent;
+    text-style: bold;
+}
+
+#main_tabs > .tabs > .tab:hover {
+    color: #d4d4d4;
+}
+
+#main_tabs > .content-switcher {
+    height: 1fr;
+    background: transparent;
+}
+
+#content_container {
+    height: 1fr;
+    padding: 0;
+    background: transparent;
+}
+
+#sidebar {
+    width: 20%;
+    background: transparent;
+    margin-left: 1;
+}
+
+#sidebar.-hidden {
+    display: none;
+}
+
+#reports_container {
+    height: 1fr;
+    background: transparent;
+    border: round #333333;
+    padding: 0;
+}
+
+#reports_container.hidden {
+    display: none;
+}
+
+/* Automated Scans panel */
+#auto_scans_container {
+    height: 1fr;
+    background: transparent;
+    padding: 0;
+}
+
+#auto_content {
+    height: 1fr;
+    background: transparent;
+}
+
+#auto_toolbar {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+#auto_scan_split {
+    height: 1fr;
+}
+
+#auto_scan_list {
+    width: 50%;
+    height: 1fr;
+    border-right: solid #1a1a1a;
+}
+
+#auto_scan_detail_scroll {
+    width: 50%;
+    height: 1fr;
+}
+
+/* Programs panel */
+#programs_container {
+    height: 1fr;
+    background: transparent;
+    padding: 0;
+}
+
+#programs_content {
+    height: 1fr;
+    background: transparent;
+}
+
+#programs_toolbar {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+/* Security Feeds panel */
+#security_feeds_container {
+    height: 1fr;
+    background: transparent;
+    padding: 0;
+}
+
+#feeds_content {
+    height: 1fr;
+    background: transparent;
+}
+
+#feeds_toolbar {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+#library_content {
+    height: 1fr;
+    background: transparent;
+    padding: 0;
+}
+
+#filter_bar {
+    height: auto;
+    background: transparent;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+#filter_bar Select {
+    height: 3;
+    background: transparent;
+    color: #d4d4d4;
+    border: round #333333;
+    margin: 0;
+    padding: 0;
+}
+
+#library_summary {
+    height: auto;
+    background: transparent;
+    color: #a8a29e;
+    padding: 0 1;
+    margin-bottom: 1;
+    text-style: dim;
+}
+
+#findings_list {
+    height: 1fr;
+    background: transparent;
+    padding: 0;
+    scrollbar-background: #000000;
+    scrollbar-color: #333333;
+    scrollbar-corner-color: #000000;
+    scrollbar-size-vertical: 1;
+}
+
+.finding-item {
+    height: auto;
+    width: 100%;
+    padding: 0 1;
+    background: transparent;
+    color: #d4d4d4;
+}
+
+.finding-item:hover {
+    background: #1a1a1a;
+    color: #fafaf9;
+}
+
+.finding-item.selected {
+    background: #1a2a1a;
+    color: #fafaf9;
+    border-left: heavy #22c55e;
+}
+
+.no-findings {
+    height: auto;
+    width: 100%;
+    padding: 1;
+    color: #737373;
+    text-style: italic;
+    text-align: center;
+}
+
+FindingDetailScreen {
+    align: center middle;
+    background: #000000 80%;
+}
+
+#finding_detail_dialog {
+    grid-size: 1;
+    grid-gutter: 1;
+    grid-rows: 1fr auto;
+    padding: 2 3;
+    width: 85%;
+    max-width: 110;
+    height: 85%;
+    max-height: 45;
+    border: solid #262626;
+    background: #0a0a0a;
+}
+
+#finding_detail_content {
+    height: 1fr;
+    background: transparent;
+    scrollbar-background: #0a0a0a;
+    scrollbar-color: #404040;
+    scrollbar-corner-color: #0a0a0a;
+    scrollbar-size: 1 1;
+    padding-right: 1;
+}
+
+#finding_detail_buttons {
+    width: 100%;
+    height: auto;
+    align: right middle;
+    padding-top: 1;
+    margin: 0;
+    border-top: solid #1a1a1a;
+}
+
+#finding_detail_buttons Button {
+    width: auto;
+    min-width: 10;
+    height: auto;
+    background: transparent;
+    color: #a3a3a3;
+    border: none;
+    text-style: none;
+    margin: 0 1;
+    padding: 0 2;
+}
+
+#finding_detail_buttons Button:hover,
+#finding_detail_buttons Button:focus {
+    background: transparent;
+    color: #22c55e;
+    border: none;
+}
+
+SubmissionStatusDialog {
+    align: center middle;
+    background: #000000 80%;
+}
+
+#submission_dialog_inner {
+    grid-size: 1;
+    grid-gutter: 0 1;
+    grid-rows: auto;
+    padding: 2 3;
+    width: 50;
+    height: auto;
+    border: round #a855f7;
+    background: #0a0a0a;
+}
+
+#submission_dialog_inner Label {
+    color: #a8a29e;
+    margin-top: 1;
+}
+
+#dialog_title {
+    color: #e5e5e5;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#dialog_domain {
+    color: #737373;
+}
+
+#dialog_current {
+    color: #d97706;
+}
+
+#dialog_status_select,
+#dialog_platform_select {
+    background: transparent;
+    color: #d4d4d4;
+    border: round #333333;
+    margin: 0;
+}
+
+#dialog_url_display,
+#dialog_notes_display {
+    color: #d4d4d4;
+    background: #1a1a1a;
+    padding: 0 1;
+    margin: 0;
+    border: round #333333;
+}
+
+#dialog_buttons {
+    grid-size: 2;
+    grid-gutter: 1;
+    grid-columns: 1fr 1fr;
+    width: 100%;
+    height: auto;
+    margin-top: 1;
+    padding-top: 1;
+    border-top: solid #1a1a1a;
+}
+
+#dialog_buttons Button {
+    height: 1;
+    min-height: 1;
+    border: none;
+    text-style: bold;
+}
+
+#save_status {
+    background: transparent;
+    color: #22c55e;
+    border: none;
+}
+
+#save_status:hover, #save_status:focus {
+    background: #22c55e;
+    color: #000000;
+    border: none;
+}
+
+#cancel_status {
+    background: transparent;
+    color: #737373;
+    border: none;
+}
+
+#cancel_status:hover, #cancel_status:focus {
+    background: #333333;
+    color: #ffffff;
+    border: none;
+}
+
+AddNoteDialog {
+    align: center middle;
+    background: #000000 80%;
+}
+
+#note_dialog_inner {
+    grid-size: 1;
+    grid-gutter: 0 1;
+    grid-rows: auto;
+    padding: 2 3;
+    width: 60;
+    height: auto;
+    border: round #3b82f6;
+    background: #0a0a0a;
+}
+
+#note_dialog_inner Label {
+    color: #a8a29e;
+    margin-top: 1;
+}
+
+#note_title {
+    color: #e5e5e5;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#note_type_select {
+    background: transparent;
+    color: #d4d4d4;
+    border: round #333333;
+    margin: 0;
+}
+
+#note_content_input {
+    height: 8;
+    background: #1a1a1a;
+    color: #d4d4d4;
+    border: round #333333;
+    margin: 0;
+}
+
+#note_buttons {
+    grid-size: 2;
+    grid-gutter: 1;
+    grid-columns: 1fr 1fr;
+    width: 100%;
+    height: auto;
+    margin-top: 1;
+    padding-top: 1;
+    border-top: solid #1a1a1a;
+}
+
+#note_buttons Button {
+    height: 1;
+    min-height: 1;
+    border: none;
+    text-style: bold;
+}
+
+#save_note {
+    background: transparent;
+    color: #22c55e;
+    border: none;
+}
+
+#save_note:hover, #save_note:focus {
+    background: #22c55e;
+    color: #000000;
+    border: none;
+}
+
+#cancel_note {
+    background: transparent;
+    color: #737373;
+    border: none;
+}
+
+#cancel_note:hover, #cancel_note:focus {
+    background: #333333;
+    color: #ffffff;
+    border: none;
+}
+
+#finding_detail_scroll {
+    height: 1fr;
+    background: transparent;
+    scrollbar-background: #0a0a0a;
+    scrollbar-color: #404040;
+    scrollbar-corner-color: #0a0a0a;
+    scrollbar-size: 1 1;
+    padding-right: 1;
+}
+
+#finding_timeline_content {
+    background: transparent;
+    padding: 0;
+    margin-top: 1;
+}
+
+#agents_tree {
+    height: 1fr;
+    background: transparent;
+    border: round #333333;
+    border-title-color: #a8a29e;
+    border-title-style: bold;
+    padding: 1;
+    margin-bottom: 0;
+}
+
+#stats_scroll {
+    height: auto;
+    max-height: 15;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    border: round #333333;
+    scrollbar-size: 0 0;
+}
+
+#stats_display {
+    height: auto;
+    background: transparent;
+    padding: 0 1;
+    margin: 0;
+}
+
+#vulnerabilities_panel {
+    height: auto;
+    max-height: 12;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    border: round #333333;
+    overflow-y: auto;
+    scrollbar-background: #000000;
+    scrollbar-color: #333333;
+    scrollbar-corner-color: #000000;
+    scrollbar-size-vertical: 1;
+}
+
+#vulnerabilities_panel.hidden {
+    display: none;
+}
+
+.target-domain-header {
+    height: auto;
+    width: 100%;
+    padding: 0 1;
+    margin-top: 1;
+    background: transparent;
+    color: #a8a29e;
+    border-bottom: solid #1a1a1a;
+}
+
+.target-finding-item {
+    padding-left: 2;
+}
+
+.vuln-item {
+    height: auto;
+    width: 100%;
+    padding: 0 1;
+    background: transparent;
+    color: #d4d4d4;
+}
+
+.vuln-item:hover {
+    background: #1a1a1a;
+    color: #fafaf9;
+}
+
+VulnerabilityDetailScreen {
+    align: center middle;
+    background: #000000 80%;
+}
+
+#vuln_detail_dialog {
+    grid-size: 1;
+    grid-gutter: 1;
+    grid-rows: 1fr auto;
+    padding: 2 3;
+    width: 85%;
+    max-width: 110;
+    height: 85%;
+    max-height: 45;
+    border: solid #262626;
+    background: #0a0a0a;
+}
+
+#vuln_detail_scroll {
+    height: 1fr;
+    background: transparent;
+    scrollbar-background: #0a0a0a;
+    scrollbar-color: #404040;
+    scrollbar-corner-color: #0a0a0a;
+    scrollbar-size: 1 1;
+    padding-right: 1;
+}
+
+#vuln_detail_content {
+    width: 100%;
+    background: transparent;
+    padding: 0;
+}
+
+#vuln_detail_buttons {
+    width: 100%;
+    height: auto;
+    align: right middle;
+    padding-top: 1;
+    margin: 0;
+    border-top: solid #1a1a1a;
+}
+
+#copy_vuln_detail {
+    width: auto;
+    min-width: 12;
+    height: auto;
+    background: transparent;
+    color: #525252;
+    border: none;
+    text-style: none;
+    margin: 0 1;
+    padding: 0 2;
+}
+
+#ask_prometheus_vuln {
+    width: auto;
+    min-width: 12;
+    height: auto;
+    background: transparent;
+    color: #22c55e;
+    border: none;
+    text-style: bold;
+    margin: 0 1;
+    padding: 0 2;
+}
+
+#ask_prometheus_vuln:hover, #ask_prometheus_vuln:focus {
+    background: transparent;
+    color: #4ade80;
+    border: none;
+}
+
+#close_vuln_detail {
+    width: auto;
+    min-width: 10;
+    height: auto;
+    background: transparent;
+    color: #a3a3a3;
+    border: none;
+    text-style: none;
+    margin: 0;
+    padding: 0 2;
+}
+
+#copy_vuln_detail:hover, #copy_vuln_detail:focus {
+    background: transparent;
+    color: #22c55e;
+    border: none;
+}
+
+#close_vuln_detail:hover, #close_vuln_detail:focus {
+    background: transparent;
+    color: #ffffff;
+    border: none;
+}
+
+#chat_area_container {
+    width: 80%;
+    background: transparent;
+}
+
+#chat_area_container.-full-width {
+    width: 100%;
+}
+
+#chat_history {
+    height: 1fr;
+    background: transparent;
+    border: round #0a0a0a;
+    padding: 0;
+    margin-bottom: 0;
+    margin-right: 0;
+    scrollbar-background: #000000;
+    scrollbar-color: #1a1a1a;
+    scrollbar-corner-color: #000000;
+    scrollbar-size: 1 1;
+}
+
+#agent_status_display {
+    height: 1;
+    background: transparent;
+    margin: 0;
+    padding: 0 1;
+}
+
+#agent_status_display.hidden {
+    display: none;
+}
+
+#status_text {
+    width: 1fr;
+    height: 100%;
+    background: transparent;
+    color: #a3a3a3;
+    text-align: left;
+    content-align: left middle;
+    text-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#keymap_indicator {
+    width: auto;
+    height: 100%;
+    background: transparent;
+    color: #737373;
+    text-align: right;
+    content-align: right middle;
+    text-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+#chat_input_container {
+    height: 3;
+    background: transparent;
+    border: round #333333;
+    margin-right: 0;
+    padding: 0;
+    layout: horizontal;
+    align-vertical: top;
+}
+
+#chat_input_container:focus-within {
+    border: round #22c55e;
+}
+
+#chat_input_container:focus-within #chat_prompt {
+    color: #22c55e;
+    text-style: bold;
+}
+
+#chat_prompt {
+    width: auto;
+    height: 100%;
+    padding: 0 0 0 1;
+    color: #737373;
+    content-align-vertical: top;
+}
+
+#chat_history:focus {
+    border: round #22c55e;
+}
+
+#chat_input {
+    width: 1fr;
+    height: 100%;
+    background: transparent;
+    border: none;
+    color: #d4d4d4;
+    padding: 0;
+    margin: 0;
+}
+
+#chat_input:focus {
+    border: none;
+}
+
+#chat_input .text-area--cursor-line {
+    background: transparent;
+}
+
+#chat_input:focus .text-area--cursor-line {
+    background: transparent;
+}
+
+#chat_input > .text-area--placeholder {
+    color: #525252;
+    text-style: italic;
+}
+
+#chat_input > .text-area--cursor {
+    color: #22c55e;
+    background: #22c55e;
+}
+
+.chat-placeholder {
+    width: 100%;
+    height: 100%;
+    content-align: center middle;
+    text-align: center;
+    color: #737373;
+    text-style: italic;
+}
+
+.placeholder-error {
+    width: 100%;
+    height: 100%;
+    content-align: left top;
+    text-align: left;
+    color: #ef4444;
+    text-style: none;
+    padding: 1 2;
+    background: #1a0000;
+    border: solid #ef4444;
+}
+
+.chat-content {
+    margin: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding: 0 1;
+    background: transparent;
+    width: 100%;
+}
+
+.chat-message {
+    margin-bottom: 0;
+    padding: 0;
+    background: transparent;
+    width: 100%;
+}
+
+.user-message {
+    color: #e5e5e5;
+    border-left: thick #3b82f6;
+    padding-left: 1;
+    margin-bottom: 1;
+}
+
+.tool-call {
+    margin-top: 1;
+    margin-bottom: 0;
+    padding: 0 1;
+    background: transparent;
+    border: none;
+    width: 100%;
+}
+
+.tool-call.status-completed {
+    background: transparent;
+    margin-top: 1;
+    margin-bottom: 0;
+}
+
+.tool-call.status-running {
+    background: transparent;
+    margin-top: 1;
+    margin-bottom: 0;
+}
+
+.tool-call.status-failed,
+.tool-call.status-error {
+    background: transparent;
+    margin-top: 1;
+    margin-bottom: 0;
+}
+
+.browser-tool,
+.terminal-tool,
+.agents-graph-tool,
+.file-edit-tool,
+.proxy-tool,
+.notes-tool,
+.thinking-tool,
+.web-search-tool,
+.scan-info-tool,
+.subagent-info-tool {
+    margin-top: 1;
+    margin-bottom: 0;
+    background: transparent;
+}
+
+.finish-tool,
+.reporting-tool {
+    margin-top: 1;
+    margin-bottom: 0;
+    background: transparent;
+}
+
+.browser-tool.status-completed,
+.browser-tool.status-running,
+.terminal-tool.status-completed,
+.terminal-tool.status-running,
+.agents-graph-tool.status-completed,
+.agents-graph-tool.status-running,
+.file-edit-tool.status-completed,
+.file-edit-tool.status-running,
+.proxy-tool.status-completed,
+.proxy-tool.status-running,
+.notes-tool.status-completed,
+.notes-tool.status-running,
+.thinking-tool.status-completed,
+.thinking-tool.status-running,
+.web-search-tool.status-completed,
+.web-search-tool.status-running,
+.scan-info-tool.status-completed,
+.scan-info-tool.status-running,
+.subagent-info-tool.status-completed,
+.subagent-info-tool.status-running {
+    background: transparent;
+    margin-top: 1;
+    margin-bottom: 0;
+}
+
+.finish-tool.status-completed,
+.finish-tool.status-running,
+.reporting-tool.status-completed,
+.reporting-tool.status-running {
+    background: transparent;
+    margin-top: 1;
+    margin-bottom: 0;
+}
+
+Tree {
+    background: transparent;
+    color: #e7e5e4;
+    scrollbar-background: transparent;
+    scrollbar-color: #404040;
+    scrollbar-corner-color: transparent;
+    scrollbar-size: 1 1;
+}
+
+Tree > .tree--label {
+    text-style: bold;
+    color: #a8a29e;
+    background: transparent;
+    padding: 0 1;
+    margin-bottom: 1;
+    border-bottom: solid #1a1a1a;
+    text-align: center;
+}
+
+.tree--node {
+    height: 1;
+    padding: 0;
+    margin: 0;
+}
+
+.tree--node-label {
+    color: #d6d3d1;
+    background: transparent;
+    text-style: none;
+    padding: 0 1;
+    margin: 0 1;
+}
+
+.tree--node:hover .tree--node-label {
+    background: transparent;
+    color: #fafaf9;
+    text-style: bold;
+    border-left: solid #a8a29e;
+}
+
+.tree--node.-selected .tree--node-label {
+    background: transparent;
+    color: #fafaf9;
+    text-style: bold;
+    border-left: heavy #d6d3d1;
+}
+
+.tree--node.-expanded .tree--node-label {
+    text-style: bold;
+    color: #fafaf9;
+    background: transparent;
+    border-left: solid #78716c;
+}
+
+Tree:focus {
+    border: round #1a1a1a;
+}
+
+Tree:focus > .tree--label {
+    color: #fafaf9;
+    text-style: bold;
+    background: transparent;
+}
+
+.tree--node .tree--node .tree--node-label {
+    color: #a8a29e;
+    padding-left: 2;
+    border: none;
+    background: transparent;
+    margin-left: 1;
+}
+
+.tree--node .tree--node:hover .tree--node-label {
+    background: transparent;
+    color: #e7e5e4;
+}
+
+.tree--node .tree--node .tree--node .tree--node-label {
+    color: #78716c;
+    padding-left: 3;
+    text-style: none;
+    border: none;
+    background: transparent;
+    margin-left: 2;
+}
+
+StopAgentScreen {
+    align: center middle;
+    background: $background 0%;
+}
+
+#stop_agent_dialog {
+    grid-size: 1;
+    grid-gutter: 1;
+    grid-rows: auto auto;
+    padding: 1;
+    width: 30;
+    height: auto;
+    border: round #a3a3a3;
+    background: #000000 98%;
+}
+
+#stop_agent_title {
+    color: #a3a3a3;
+    text-style: bold;
+    text-align: center;
+    width: 100%;
+    margin-bottom: 0;
+}
+
+#stop_agent_buttons {
+    grid-size: 2;
+    grid-gutter: 1;
+    grid-columns: 1fr 1fr;
+    width: 100%;
+    height: 1;
+}
+
+#stop_agent_buttons Button {
+    height: 1;
+    min-height: 1;
+    border: none;
+    text-style: bold;
+}
+
+#stop_agent {
+    background: transparent;
+    color: #ef4444;
+    border: none;
+}
+
+#stop_agent:hover, #stop_agent:focus {
+    background: #ef4444;
+    color: #ffffff;
+    border: none;
+}
+
+#cancel_stop {
+    background: transparent;
+    color: #737373;
+    border: none;
+}
+
+#cancel_stop:hover, #cancel_stop:focus {
+    background:rgb(54, 54, 54);
+    color: #ffffff;
+    border: none;
+}
+
+QuitScreen {
+    align: center middle;
+    background: $background 0%;
+}
+
+#quit_dialog {
+    grid-size: 1;
+    grid-gutter: 1;
+    grid-rows: auto auto;
+    padding: 1;
+    width: 24;
+    height: auto;
+    border: round #333333;
+    background: #000000 98%;
+}
+
+#quit_title {
+    color: #d4d4d4;
+    text-style: bold;
+    text-align: center;
+    width: 100%;
+    margin-bottom: 0;
+}
+
+#quit_buttons {
+    grid-size: 2;
+    grid-gutter: 1;
+    grid-columns: 1fr 1fr;
+    width: 100%;
+    height: 1;
+}
+
+#quit_buttons Button {
+    height: 1;
+    min-height: 1;
+    border: none;
+    text-style: bold;
+}
+
+#quit {
+    background: transparent;
+    color: #ef4444;
+    border: none;
+}
+
+#quit:hover, #quit:focus {
+    background: #ef4444;
+    color: #ffffff;
+    border: none;
+}
+
+#cancel {
+    background: transparent;
+    color: #737373;
+    border: none;
+}
+
+#cancel:hover, #cancel:focus {
+    background:rgb(54, 54, 54);
+    color: #ffffff;
+    border: none;
+}
+
+HelpScreen {
+    align: center middle;
+    background: $background 0%;
+}
+
+#dialog {
+    grid-size: 1;
+    grid-gutter: 0 1;
+    grid-rows: auto auto;
+    padding: 1 2;
+    width: 40;
+    height: auto;
+    border: round #22c55e;
+    background: #000000 98%;
+}
+
+#help_title {
+    color: #22c55e;
+    text-style: bold;
+    text-align: center;
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#help_content {
+    color: #d4d4d4;
+    text-align: left;
+    width: 100%;
+    margin-bottom: 1;
+    padding: 0;
+    background: transparent;
+    text-style: none;
+}
+
+/* Scan Selector in sidebar */
+#scan_selector {
+    height: auto;
+    max-height: 12;
+    background: transparent;
+    border: round #333333;
+    border-title-color: #a8a29e;
+    border-title-style: bold;
+    padding: 1;
+    margin-bottom: 0;
+}
+
+#scan_selector.-hidden-scan-selector {
+    display: none;
+}
+
+/* Scan Launcher Screen */
+ScanLauncherScreen {
+    align: center middle;
+    background: #000000 80%;
+}
+
+#scan_launcher_dialog {
+    grid-size: 1;
+    grid-gutter: 1;
+    padding: 2 3;
+    width: 70;
+    max-width: 90;
+    height: auto;
+    max-height: 80%;
+    border: solid #262626;
+    background: #0a0a0a;
+}
+
+#scan_launcher_title {
+    color: #22c55e;
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}
+
+#scan_launcher_form {
+    height: auto;
+    background: transparent;
+    padding: 0;
+}
+
+.scan-field-label {
+    color: #a8a29e;
+    margin-top: 1;
+    margin-bottom: 0;
+}
+
+#scan_target {
+    height: 4;
+    background: #1a1a1a;
+    color: #d4d4d4;
+    border: round #333333;
+    margin: 0;
+}
+
+#scan_target:focus {
+    border: round #22c55e;
+}
+
+#scan_target > .text-area--placeholder {
+    color: #525252;
+    text-style: italic;
+}
+
+#scan_target > .text-area--cursor {
+    color: #22c55e;
+    background: #22c55e;
+}
+
+#scan_mode {
+    background: transparent;
+    color: #d4d4d4;
+    border: round #333333;
+    margin: 0;
+    min-height: 3;
+}
+
+#scan_mode:focus {
+    border: round #22c55e;
+}
+
+#scan_instructions {
+    height: 4;
+    background: #1a1a1a;
+    color: #d4d4d4;
+    border: round #333333;
+    margin: 0;
+}
+
+#scan_instructions:focus {
+    border: round #22c55e;
+}
+
+#scan_instructions > .text-area--placeholder {
+    color: #525252;
+    text-style: italic;
+}
+
+#scan_instructions > .text-area--cursor {
+    color: #22c55e;
+    background: #22c55e;
+}
+
+#scan_headers {
+    height: 4;
+    background: #1a1a1a;
+    color: #d4d4d4;
+    border: round #333333;
+    margin: 0;
+}
+
+#scan_headers:focus {
+    border: round #22c55e;
+}
+
+#scan_headers > .text-area--placeholder {
+    color: #525252;
+    text-style: italic;
+}
+
+#scan_headers > .text-area--cursor {
+    color: #22c55e;
+    background: #22c55e;
+}
+
+#scan_rate_limit {
+    height: 3;
+    background: #1a1a1a;
+    color: #d4d4d4;
+    border: round #333333;
+    margin: 0;
+}
+
+#scan_rate_limit:focus {
+    border: round #22c55e;
+}
+
+#scan_launcher_buttons {
+    grid-size: 2;
+    grid-gutter: 1;
+    grid-columns: 1fr 1fr;
+    width: 100%;
+    height: auto;
+    margin-top: 1;
+    padding-top: 1;
+    border-top: solid #1a1a1a;
+}
+
+#scan_launcher_buttons Button {
+    height: 1;
+    min-height: 1;
+    border: none;
+    text-style: bold;
+}
+
+#launch_scan {
+    background: transparent;
+    color: #22c55e;
+    border: none;
+}
+
+#launch_scan:hover, #launch_scan:focus {
+    background: #22c55e;
+    color: #000000;
+    border: none;
+}
+
+#cancel_scan {
+    background: transparent;
+    color: #737373;
+    border: none;
+}
+
+#cancel_scan:hover, #cancel_scan:focus {
+    background: #333333;
+    color: #ffffff;
+    border: none;
+}
