@@ -14,11 +14,12 @@ import sqlite3
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
+
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_DB_PATH = Path.home() / ".prometheus" / "cve_watcher.db"
+_DEFAULT_DB_PATH = Path.home() / ".prometheus" / "prometheus.db"
 
 _instance: CVEWatcher | None = None
 _instance_lock = threading.Lock()
@@ -40,7 +41,7 @@ class CVEWatcher:
 
     CHECK_INTERVAL = 1800  # 30 minutes in seconds
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> CVEWatcher:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance
@@ -113,18 +114,13 @@ class CVEWatcher:
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Start the background watcher daemon thread."""
-        if self._thread is not None and self._thread.is_alive():
-            logger.warning("CVEWatcher already running")
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(
-            target=self._run_loop,
-            name="prometheus-cve-watcher",
-            daemon=True,
-        )
-        self._thread.start()
-        logger.info("CVEWatcher daemon started (interval=%ds)", self.CHECK_INTERVAL)
+        """DISABLED — Prometheus is not a daemon, scans are point-in-time.
+
+        Threat intel is refreshed via ingest_all() at scan start.
+        CVEWatcher auto-trigger is not used.
+        """
+        logger.info("CVEWatcher is disabled — not starting daemon thread")
+        return
 
     def stop(self, timeout: float = 30.0) -> None:
         """Request graceful shutdown and wait for the thread to finish."""
@@ -237,7 +233,7 @@ class CVEWatcher:
                 logger.info("CVEWatcher: no active targets registered")
                 return summary
 
-            # 3-4. For each target, check knowledge.db for tech fingerprints
+            # 3-4. For each target, check prometheus.db for tech fingerprints
             #      and query local threat intel DB for new CVEs
             from prometheus.tools.threat_intel.local_db import ThreatIntelDB
 
@@ -335,7 +331,7 @@ class CVEWatcher:
     ) -> list[dict[str, Any]]:
         """Check a single target for new CVEs.
 
-        1. Query knowledge.db for ``tech_stack`` entries (technology fingerprints).
+        1. Query prometheus.db for ``tech_stack`` entries (technology fingerprints).
         2. For each technology, query the threat intel DB for CVEs.
         3. Compare against seen_advisories — return only NEW ones.
 
@@ -427,7 +423,7 @@ class CVEWatcher:
 
         Sources (in order):
         1. ``target_config.tech_stack`` stored in the target registry.
-        2. ``knowledge.db`` ``tech_stack`` category entries for the domain.
+        2. ``prometheus.db`` ``tech_stack`` category entries for the domain.
         """
         fingerprints: list[dict[str, str]] = []
         seen: set[str] = set()
@@ -443,7 +439,7 @@ class CVEWatcher:
                 seen.add(key)
                 fingerprints.append({"technology": tech, "version": version})
 
-        # From knowledge.db
+        # From prometheus.db
         try:
             from prometheus.tools.knowledge.store import KnowledgeStore
 

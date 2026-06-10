@@ -12,10 +12,12 @@ Thread-safe singleton pattern — one ``ScanScheduler`` per process.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Self
+
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,7 @@ class ScanScheduler:
     scheduler per process.
     """
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> ScanScheduler:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance
@@ -83,19 +85,14 @@ class ScanScheduler:
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Start the background scheduler daemon."""
-        if self.is_running:
-            logger.warning("ScanScheduler already running")
-            return
-        self._stop_event.clear()
-        self._running = True
-        self._thread = threading.Thread(
-            target=self._run_loop,
-            name="prometheus-scan-scheduler",
-            daemon=True,
-        )
-        self._thread.start()
-        logger.info("ScanScheduler started")
+        """DISABLED — automatic scheduled scans are not used.
+
+        Prometheus runs point-in-time scans only. The scheduler class is kept
+        for reference and manual schedule queries via the agent tools.
+        """
+        logger.info("ScanScheduler is disabled — automatic scans are not enabled")
+        self._running = False
+        return
 
     def stop(self, *, timeout: float = 15.0) -> None:
         """Gracefully stop the scheduler daemon."""
@@ -152,7 +149,6 @@ class ScanScheduler:
 
         with self._lock:
             paused = set(self._paused_targets)
-            overrides = dict(self._schedule_overrides)
 
         try:
             targets = registry.list_targets(status="active")
@@ -189,9 +185,10 @@ class ScanScheduler:
 
         registry = TargetRegistry()
         with self._lock:
-            overrides = dict(self._schedule_overrides)
+
             paused = set(self._paused_targets)
             vulns = set(self._targets_with_vulns)
+            overrides = dict(self._schedule_overrides)
 
         try:
             targets = registry.list_targets(status="active")

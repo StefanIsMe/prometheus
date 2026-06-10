@@ -14,7 +14,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Self
 
 from prometheus.config import load_settings
 from prometheus.core.agents import AgentCoordinator
@@ -23,6 +23,11 @@ from prometheus.core.scan_persistence import ScanPersistence
 from prometheus.core.target_registry import TargetRegistry
 from prometheus.interface.tui.live_view import TuiLiveView
 from prometheus.report.state import ReportState
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +63,7 @@ class ScanOrchestrator:
     orchestrator per process.
     """
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> ScanOrchestrator:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance
@@ -161,6 +166,10 @@ class ScanOrchestrator:
         report_state = ReportState(run_name=run_name)
         report_state.hydrate_from_run_dir()
 
+        # Set global report state so create_vulnerability_report can persist findings
+        from prometheus.report.state import set_global_report_state
+        set_global_report_state(report_state)
+
         live_view = TuiLiveView()
 
         coordinator = AgentCoordinator()
@@ -210,6 +219,13 @@ class ScanOrchestrator:
                         "event_sink error for %s (total: %d)", agent_id, _event_sink_errors, exc_info=True,
                     )
 
+        # Progress callback that feeds progress messages to the live view
+        def progress_callback(msg: str) -> None:
+            try:
+                live_view.add_system_message(msg)
+            except Exception:
+                pass
+
         # Background thread: own event loop running run_prometheus_scan
         def _thread_target() -> None:
             loop = asyncio.new_event_loop()
@@ -217,6 +233,7 @@ class ScanOrchestrator:
             asyncio.set_event_loop(loop)
             instance.status = "running"
             self._fire_event("scan_running", instance)
+            logger.debug("Scan %s thread started (event loop created)", scan_id)
             try:
                 loop.run_until_complete(
                     run_prometheus_scan(
@@ -225,6 +242,7 @@ class ScanOrchestrator:
                         image=image,
                         coordinator=coordinator,
                         event_sink=event_sink,
+                        progress_callback=progress_callback,
                     )
                 )
                 instance.status = "completed"
@@ -247,6 +265,12 @@ class ScanOrchestrator:
             finally:
                 loop.close()
                 instance.loop = None
+                # Clear thread-local report state to avoid leaking to next scan
+                try:
+                    from prometheus.report.state import clear_thread_report_state
+                    clear_thread_report_state()
+                except Exception:
+                    pass
 
         thread = threading.Thread(
             target=_thread_target,
@@ -385,6 +409,7 @@ class ScanOrchestrator:
 
     def shutdown_all(self) -> None:
         """Stop all running scans and wait for threads to finish."""
+        logger.info("Shutting down all scans...")
         with self._lock:
             scan_ids = list(self._scans.keys())
 
@@ -463,15 +488,10 @@ class ScanOrchestrator:
             }
 
             # Enrich with details from the target record
-            if target_type == "url":
+            if target_type in {"url", "domain"}:
                 target_entry["value"] = target_name
                 target_entry["details"] = target_config
-            elif target_type == "domain":
-                target_entry["value"] = target_name
-                target_entry["details"] = target_config
-            elif target_type == "repository":
-                target_entry["details"] = target_config
-            elif target_type == "local_code":
+            elif target_type in {"repository", "local_code"}:
                 target_entry["details"] = target_config
             else:
                 target_entry["details"] = target_config

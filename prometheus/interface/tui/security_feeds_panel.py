@@ -8,17 +8,21 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Static
+
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
+
 
 logger = logging.getLogger(__name__)
 
 # Feed metadata — human-readable names, URLs, and what each feed covers
 FEED_INFO: dict[str, dict[str, str]] = {
-    "nvd": {
+    "nvd_recent": {
         "name": "NVD (National Vulnerability Database)",
         "url": "https://services.nvd.nist.gov/rest/json/cves/2.0",
         "description": "US government CVE repository. Keyword + CPE search. Primary source for CVSS scores.",
@@ -32,14 +36,14 @@ FEED_INFO: dict[str, dict[str, str]] = {
         "auth": "None",
         "coverage": "Open source packages",
     },
-    "ghsa": {
+    "ghsa_bulk": {
         "name": "GHSA (GitHub Security Advisories)",
         "url": "https://api.github.com/advisories",
         "description": "GitHub's advisory database. Per-ecosystem bulk fetch (npm, pip, go, maven, nuget, rubygems, rust, composer).",
         "auth": "GitHub token (optional, 60 req/hr unauthenticated)",
         "coverage": "GitHub-hosted ecosystems",
     },
-    "circl": {
+    "circl_recent": {
         "name": "CIRCL Vulnerability-Lookup",
         "url": "https://cve.circl.lu/api/search",
         "description": "European CERT's vulnerability lookup. Vendor/product search with CVSS and exploit refs.",
@@ -74,7 +78,7 @@ FEED_INFO: dict[str, dict[str, str]] = {
         "auth": "None",
         "coverage": "Actively exploited CVEs only",
     },
-    "shodan": {
+    "shodan_recent": {
         "name": "Shodan CVEDB",
         "url": "https://cvedb.shodan.io/cve/recent",
         "description": "Shodan's CVE database with recent high/critical vulnerabilities.",
@@ -92,10 +96,10 @@ FEED_INFO: dict[str, dict[str, str]] = {
 
 # Scan-time query sources (used during every scan, not just bulk ingestion)
 SCAN_QUERY_SOURCES = [
-    "nvd",
+    "nvd_recent",
     "osv",
-    "ghsa",
-    "circl",
+    "ghsa_bulk",
+    "circl_recent",
     "vulnerablecode",
     "npm_advisory",
     "epss",

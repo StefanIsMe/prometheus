@@ -167,13 +167,15 @@ async def check_duplicate(
 
     try:
         settings = load_settings()
+        from prometheus.config.models import configure_sdk_model_defaults
+        resolution = configure_sdk_model_defaults(settings)
         model_name = settings.llm.model
         if not model_name:
             return {
                 "is_duplicate": False,
                 "duplicate_id": "",
                 "confidence": 0.0,
-                "reason": "prometheus_LLM not configured; skipping dedupe check",
+                "reason": "No LLM model configured; skipping dedupe check",
             }
 
         candidate_cleaned = _prepare_report_for_comparison(candidate)
@@ -187,11 +189,14 @@ async def check_duplicate(
         )
 
         resolved_model = normalize_model_name(model_name)
-        model = MultiProvider().get_model(resolved_model)
-        response = await model.get_response(
+        # Use unknown_prefix_mode="model_id" so non-SDK prefixed model
+        # names pass through verbatim to the resolved gateway.
+        model = MultiProvider(unknown_prefix_mode="model_id").get_model(resolved_model)
+        response = None
+        async for event in model.stream_response(
             system_instructions=DEDUPE_SYSTEM_PROMPT,
             input=user_msg,
-            model_settings=ModelSettings(retry=DEFAULT_MODEL_RETRY, include_usage=True),
+            model_settings=ModelSettings(retry=DEFAULT_MODEL_RETRY, include_usage=True, store=False),
             tools=[],
             output_schema=None,
             handoffs=[],
@@ -199,7 +204,17 @@ async def check_duplicate(
             previous_response_id=None,
             conversation_id=None,
             prompt=None,
-        )
+        ):
+            event_response = getattr(event, "response", None)
+            if event_response is not None:
+                response = event_response
+        if response is None:
+            return {
+                "is_duplicate": False,
+                "duplicate_id": "",
+                "confidence": 0.0,
+                "reason": "Empty stream response from LLM",
+            }
         report_state = get_global_report_state()
         if report_state is not None:
             report_state.record_sdk_usage(

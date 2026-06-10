@@ -15,8 +15,11 @@ import json
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +141,7 @@ EXPLOITATION_CRITERIA: dict[str, dict[str, Any]] = {
             "Try event handler injection: <img src=x onerror=alert(1)>.",
             "Test DOM-based XSS via URL fragments and document.location.",
             "Try SVG-based payloads: <svg onload=alert(1)>.",
-            "Test attribute breakout: \" onmouseover=\"alert(1).",
+            'Test attribute breakout: " onmouseover="alert(1).',
             "Try polyglot payloads that work across contexts.",
             "Test stored XSS via comment, profile, or message fields.",
             "Check for XSS via JSONP callback parameter injection.",

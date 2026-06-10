@@ -41,8 +41,8 @@ class ValidationVerdict:
     missing: str
     confidence: float
     h1_likely_outcome: str  # 'accepted' | 'informational' | 'na'
-    criteria_met: list[str] = field(default_factory=lambda: [])
-    criteria_failed: list[str] = field(default_factory=lambda: [])
+    criteria_met: list[str] = field(default_factory=list)
+    criteria_failed: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -562,9 +562,102 @@ VALIDATION_CRITERIA: dict[str, dict[str, dict[str, Any]]] = {
             "keywords": [
                 "waf.*block.*traversal", "traversal.*blocked",
                 "path.*sanitiz", "directory.*traversal.*prevent",
-                "\\./\\.\\./*.*block",
+                "\\./\\.\\/*.*block",
             ],
             "description": "WAF blocks traversal sequences",
+        },
+    },
+    "pkce_downgrade": {
+        "validated": {
+            "keywords": [
+                # Require ACTUAL token exchange evidence, not metadata
+                "token.*endpoint.*accept.*plain.*code_verifier.*returned.*token",
+                "plain.*code_verifier.*exchanged.*for.*access_token",
+                "pkce.*downgrade.*confirmed.*token.*received",
+                "authorization.*code.*intercepted.*exchanged.*plain",
+                "plain.*pkce.*token.*exchange.*successful",
+                "access_token.*obtained.*via.*plain.*code_verifier",
+            ],
+            "description": (
+                "PKCE downgrade confirmed: token endpoint accepted plain code_verifier "
+                "and returned actual tokens. Full OAuth chain demonstrated."
+            ),
+        },
+        "speculative": {
+            "keywords": [
+                "plain.*method.*in.*discovery", "code_challenge_methods_supported.*plain",
+                "pkce.*metadata.*mismatch", "oauth.*misconfiguration",
+                "plain.*pkce.*advertised", "insecure.*pkce.*method",
+                "pkce.*not.*enforced", "missing.*pkce.*enforcement",
+                "no.*code_challenge.*required",
+                # These are metadata-only — informational, not reportable
+                "plain.*method.*advertised", "code_challenge_methods.*plain",
+                "pkce.*downgrade.*confirmed", "plain.*pkce.*accepted",
+                "authorize.*accept.*plain", "discovery.*advertises.*plain",
+                "metadata.*plain.*pkce", "oauth.*downgrade.*confirmed",
+                "cve.2025.4144",
+            ],
+            "negation_keywords": [
+                # Only actual token exchange negates speculative status
+                "access_token.*obtained.*via.*plain",
+                "plain.*verifier.*returned.*token",
+                "token.*exchange.*confirmed.*plain.*method",
+            ],
+            "description": (
+                "PKCE metadata mismatch or missing enforcement without confirmed "
+                "token exchange exploitation. To be validated, demonstrate that the "
+                "token endpoint accepts plain code_verifier AND returns actual tokens "
+                "using a real authorization code from a completed user login flow. "
+                "Metadata-only findings (discovery doc, authorize endpoint) are NOT reportable."
+            ),
+        },
+        "false_positive": {
+            "keywords": [
+                "s256.*only", "plain.*rejected", "pkce.*enforced",
+                "token.*reject.*plain", "invalid_request.*missing.*code_challenge",
+                "plain.*not.*supported",
+            ],
+            "description": (
+                "Server correctly rejects plain PKCE or enforces S256 only"
+            ),
+        },
+    },
+    "oauth_misconfiguration": {
+        "validated": {
+            "keywords": [
+                "token.*leak.*via.*redirect", "open.*redirect.*oauth",
+                "authorization.*code.*intercept", "token.*theft.*via",
+                "oauth.*account.*takeover", "jwt.*none.*algorithm",
+                "jwt.*algorithm.*confusion", "refresh.*token.*reuse",
+                "state.*parameter.*missing.*exploit", "csrf.*oauth.*confirmed",
+            ],
+            "description": (
+                "OAuth misconfiguration exploited: token theft, account takeover, "
+                "or authentication bypass via OAuth flow manipulation"
+            ),
+        },
+        "speculative": {
+            "keywords": [
+                "oauth.*misconfiguration", "oauth.*weakness",
+                "missing.*state.*parameter", "open.*redirect.*potential",
+                "jwt.*weakness", "token.*storage.*insecure",
+                "oauth.*config.*issue", "oidc.*misconfiguration",
+            ],
+            "negation_keywords": [
+                "exploit.*confirmed", "token.*stolen", "account.*takeover",
+                "bypass.*confirmed", "code.*intercepted",
+            ],
+            "description": (
+                "OAuth configuration issue observed without confirmed exploitation. "
+                "Demonstrate token theft, account takeover, or auth bypass to validate."
+            ),
+        },
+        "false_positive": {
+            "keywords": [
+                "oauth.*working.*correctly", "standard.*oauth.*flow",
+                "expected.*behavior", "oauth.*properly.*configured",
+            ],
+            "description": "OAuth flow working as designed",
         },
     },
 }
@@ -636,12 +729,12 @@ _EXPLOITATION_SIGNALS: list[str] = [
 
 _TYPE_KEYWORDS: dict[str, list[str]] = {
     "ssr_hostname_leak": [
-        "ssr.*hostname", "internal.*hostname", "railway.*internal", 
+        "ssr.*hostname", "internal.*hostname", "railway.*internal",
         "nuxt.*data.*leak", "next.*data.*leak", "angular.*data.*leak",
         "_nuxt_data", "_ssr_data", "ssr.*internal", "server.*address.*leak",
     ],
     "fingerprinting": [
-        "version.*disclosure", "banner.*disclosure", "fingerprint", 
+        "version.*disclosure", "banner.*disclosure", "fingerprint",
         "technology.*identified", "framework.*version", "server.*header.*reveals",
     ],
     "missing_header": [
@@ -660,6 +753,15 @@ _TYPE_KEYWORDS: dict[str, list[str]] = {
     "ssti": ["server-side template injection", "ssti", "template injection", "server side template injection"],
     "xxe": ["xxe", "xml external entity", "xml injection", "xml entity injection"],
     "lfi": ["local file inclusion", "lfi", "path traversal", "directory traversal", "file inclusion"],
+    "pkce_downgrade": [
+        "pkce", "code_challenge", "code_verifier", "proof key for code exchange",
+        "pkce downgrade", "plain pkce", "s256", "code_challenge_method",
+    ],
+    "oauth_misconfiguration": [
+        "oauth", "oidc", "openid connect", "authorization code", "token endpoint",
+        "authorize endpoint", "oauth misconfiguration", "jwt", "refresh token",
+        "bearer token", "oauth flow", "oauth bypass",
+    ],
 }
 
 
@@ -754,7 +856,7 @@ def validate_finding(finding: dict[str, Any]) -> ValidationVerdict:
     impact = str(finding.get("impact") or "").strip()
 
     # Combine all evidence text for pattern matching
-    all_evidence = " ".join([poc_desc, poc_code, tech_analysis, description, impact])
+    all_evidence = f"{poc_desc} {poc_code} {tech_analysis} {description} {impact}"
 
     # Step 1 — classify type
     vuln_type = classify_finding_type(title, description)
@@ -859,12 +961,7 @@ def validate_finding(finding: dict[str, Any]) -> ValidationVerdict:
     confidence = max(0.1, min(confidence, 0.75))
 
     # Decide h1 outcome
-    if confidence >= 0.5:
-        h1_outcome = "informational"
-    elif confidence >= 0.3:
-        h1_outcome = "informational"
-    else:
-        h1_outcome = "na"
+    h1_outcome = "informational" if confidence >= 0.5 or confidence >= 0.3 else "na"
 
     criteria_met_list: list[str] = []
     if spec_matches:

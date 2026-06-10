@@ -23,6 +23,7 @@ def _resolve_skills(
     scan_mode: str = "deep",
     is_whitebox: bool = False,
     is_root: bool = False,
+    compress: bool = False,
 ) -> list[str]:
     """Build the deduped, ordered skills list for the prompt render.
 
@@ -37,10 +38,43 @@ def _resolve_skills(
     5. ``coordination/root_agent`` for the root agent only — orchestration
        guidance for delegating to specialist subagents.
     6. Whitebox-specific skills if applicable.
+
+    Phase 3: When ``compress`` is True, only load essential skills
+    (scan_mode, tooling, coordination). Vulnerability skills are skipped
+    and can be loaded on-demand via the ``load_skill`` tool.
     """
+    # Essential skills that are always loaded
+    _ESSENTIAL_SKILLS = {
+        "scan_modes", "tooling", "coordination", "custom",
+    }
+
     ordered: list[str] = list(requested or [])
+
+    if compress:
+        # Phase 3: Only load essential skills, skip vulnerability skills
+        # Build a lookup of skill name -> category
+        skills_dir = get_prometheus_resource_path("skills")
+        skill_categories: dict[str, str] = {}
+        if skills_dir.exists():
+            for category_dir in skills_dir.iterdir():
+                if not category_dir.is_dir() or category_dir.name.startswith("__"):
+                    continue
+                for file_path in category_dir.glob("*.md"):
+                    skill_categories[file_path.stem] = category_dir.name
+
+        filtered: list[str] = []
+        for skill in ordered:
+            # Check category from prefix or from lookup
+            category = skill.split("/")[0] if "/" in skill else ""
+            if not category:
+                category = skill_categories.get(skill, "")
+            if category in _ESSENTIAL_SKILLS or not category:
+                filtered.append(skill)
+        ordered = filtered
+
     ordered.append(f"scan_modes/{scan_mode}")
     ordered.append("tooling/agent_browser")
+    ordered.append("tooling/browser_harness")
     ordered.append("tooling/python")
     if is_root:
         ordered.append("coordination/root_agent")
@@ -65,6 +99,7 @@ def render_system_prompt(
     is_root: bool = False,
     interactive: bool = False,
     system_prompt_context: dict[str, Any] | None = None,
+    compress: bool = False,
 ) -> str:
     """Render the system prompt. Returns empty string on template failure."""
     try:
@@ -83,6 +118,7 @@ def render_system_prompt(
             scan_mode=scan_mode,
             is_whitebox=is_whitebox,
             is_root=is_root,
+            compress=compress,
         )
         skill_content = load_skills(skills_to_load)
         env.globals["get_skill"] = lambda name: skill_content.get(name, "")

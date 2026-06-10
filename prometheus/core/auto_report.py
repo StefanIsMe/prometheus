@@ -11,9 +11,10 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
+
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class AutoReporter:
     instance per process.
     """
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> AutoReporter:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance
@@ -80,7 +81,7 @@ class AutoReporter:
         confidence = finding_data.get("confidence", "")
         scan_id = finding_data.get("scan_id", "")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         md = f"""# Vulnerability Report: {title}
 
@@ -194,6 +195,7 @@ class AutoReporter:
                 else:
                     reports = []
             except (json.JSONDecodeError, OSError):
+                logger.debug("_update_summary: could not read reports summary; starting fresh", exc_info=True)
                 reports = []
 
             reports.append({

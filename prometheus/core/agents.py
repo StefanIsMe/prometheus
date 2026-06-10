@@ -231,6 +231,163 @@ class AgentCoordinator:
         async with self._lock:
             return dict(self.parent_of), dict(self.statuses), dict(self.names)
 
+    async def compact_root_session(self, keep_turns: int = 10) -> int:
+        """Compact the root agent's running session by removing old tool outputs.
+
+        The root session grows unboundedly during a scan — every turn adds
+        tool calls, outputs, and messages. DeepSeek v4 has a 1M context
+        window but keeping the session small improves cache efficiency and
+        response speed.
+
+        Strategy:
+        - Keep system prompt items (always)
+        - Keep the most recent `keep_turns` function_call + output pairs
+        - Compress older outputs into a single summary message
+        - Remove orphaned function_call items whose output was dropped
+
+        Returns 1 if compacted, 0 if nothing to do.
+        """
+        # Find the root agent (parent_id is None and status is running)
+        async with self._lock:
+            root_aids = [
+                aid for aid, status in self.statuses.items()
+                if status == "running" and self.parent_of.get(aid) is None
+            ]
+        if not root_aids:
+            return 0
+
+        root_id = root_aids[0]
+        runtime = self.runtimes.get(root_id)
+        if runtime is None or runtime.session is None:
+            return 0
+
+        session = runtime.session
+        try:
+            items = await session.get_items()
+            if not items or len(items) < keep_turns * 3:
+                # Too few items to warrant compaction
+                return 0
+
+            # Separate items by type
+            kept: list[Any] = []
+            tool_pairs: list[tuple[int, Any, Any]] = []  # (index, call_item, output_item)
+            other_items: list[tuple[int, Any]] = []
+
+            for i, item in enumerate(items):
+                if not isinstance(item, dict):
+                    kept.append(item)
+                    continue
+                item_type = item.get("type", "")
+                if item_type == "function_call":
+                    tool_pairs.append((i, item, None))
+                elif item_type == "function_call_output":
+                    # Find matching function_call and pair them
+                    call_id = item.get("call_id", "")
+                    for j, (idx, call, out) in enumerate(tool_pairs):
+                        if out is None and call.get("call_id") == call_id:
+                            tool_pairs[j] = (idx, call, item)
+                            break
+                    else:
+                        # Orphaned output — keep it
+                        other_items.append((i, item))
+                elif item_type in ("message", "reasoning"):
+                    other_items.append((i, item))
+                else:
+                    kept.append(item)
+
+            # Sort pairs by position
+            tool_pairs.sort(key=lambda x: x[0])
+            # Keep only the last keep_turns pairs
+            pairs_to_keep = tool_pairs[-keep_turns:] if len(tool_pairs) > keep_turns else tool_pairs
+            pairs_to_drop = tool_pairs[:-keep_turns] if len(tool_pairs) > keep_turns else []
+
+            if not pairs_to_drop:
+                return 0  # Nothing to compact
+
+            # Build a compression summary from dropped pairs.
+            # Include brief output previews for all tool types so the agent
+            # retains awareness of findings even after compaction.
+            dropped_tools: list[str] = []
+            for _, call, output in pairs_to_drop:
+                tool_name = call.get("name", "unknown") if call else "unknown"
+                output_preview = ""
+                if output and isinstance(output.get("output"), str):
+                    raw = output["output"]
+                    # Take first meaningful line/chunk — skip chunk headers
+                    for line in raw.split("\n"):
+                        line = line.strip()
+                        if line and not line.startswith("Chunk ID:") and not line.startswith("Wall time:"):
+                            output_preview = line[:120]
+                            break
+                    if not output_preview:
+                        output_preview = raw[:120]
+                if output_preview:
+                    dropped_tools.append(f"[{tool_name}] {output_preview}")
+                else:
+                    dropped_tools.append(f"[{tool_name}] (no output)")
+
+            # Cap at 10 tools to keep summaries compact
+            dropped_summary = "\n".join(f"  {t}" for t in dropped_tools[:10])
+            if len(dropped_tools) > 10:
+                dropped_summary += f"\n  ... and {len(dropped_tools) - 10} more"
+
+            summary = (
+                f"[SESSION COMPACTED: {len(dropped_tools)} earlier tool calls compressed. "
+
+                f"Summary of dropped operations:\n"
+
+                f"{dropped_summary}\n"
+
+                f"Current state preserved in the {len(pairs_to_keep)} most recent operations below.]"
+
+            )
+
+            # Rebuild session: system items + cumulative summary + recent pairs.
+            # Filter out old SESSION COMPACTED messages so they don't pile up
+            # across multiple compaction cycles.
+            new_items: list[Any] = []
+            for item in kept:
+                if isinstance(item, dict) and item.get("role") == "user":
+                    content = str(item.get("content", ""))
+                    if "[SESSION COMPACTED:" in content:
+                        continue  # drop old compaction summaries
+                new_items.append(item)
+            new_items.append({"role": "user", "content": summary})
+
+            for _, call, output in pairs_to_keep:
+                if call:
+                    new_items.append(call)
+                if output:
+                    new_items.append(output)
+
+            # Also keep any recent other_items (messages, reasoning after the last kept pair)
+            # but skip old compaction summaries there too.
+            if pairs_to_keep:
+                last_kept_idx = pairs_to_keep[-1][0]
+                for idx, item in other_items:
+                    if idx > last_kept_idx:
+                        if isinstance(item, dict) and item.get("role") == "user":
+                            content = str(item.get("content", ""))
+                            if "[SESSION COMPACTED:" in content:
+                                continue
+                        new_items.append(item)
+
+            removed = len(items) - len(new_items)
+            if removed > 0:
+                await session.clear_session()
+                if new_items:
+                    await session.add_items(new_items)
+                logger.info(
+                    "Compacted root session %s: %d → %d items (dropped %d tool pairs)",
+                    root_id, len(items), len(new_items), len(dropped_tools),
+                )
+                return 1
+
+        except Exception:
+            logger.debug("Failed to compact root session", exc_info=True)
+
+        return 0
+
     def _message_to_session_item(self, message: dict[str, Any]) -> TResponseInputItem:
         sender = str(message.get("from", "unknown"))
         content = str(message.get("content", ""))

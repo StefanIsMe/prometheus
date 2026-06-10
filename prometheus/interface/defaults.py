@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 # Default skills loaded by the root agent.
 # Both cli.py and tui/app.py import this instead of maintaining separate copies.
 DEFAULT_SKILLS: list[str] = [

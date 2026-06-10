@@ -1,0 +1,101 @@
+# Prometheus Configuration with OpenAI OAuth Support
+# This file configures LLM providers, OAuth authentication, and fallback strategies
+
+# OAuth Configuration
+oauth:
+  openai:
+    enabled: true
+    client_id: ""  # Set your OpenAI OAuth client ID
+    client_secret: ""  # Set your OpenAI OAuth client secret
+    auth_url: "https://auth.openai.com/oauth/authorize"
+    token_url: "https://auth.openai.com/oauth/token"
+    redirect_uri: "https://chatgpt.com/api/auth/callback"
+    scope: "openid email profile"
+    pkce_enabled: true
+    refresh_token: ""  # Will be stored after initial auth
+    access_token: ""  # Will be stored after initial auth
+
+# LLM Provider Configuration with Priority Order
+providers:
+  # Primary: OpenAI OAuth (highest priority)
+  - name: "openai-oauth"
+    type: "openai"
+    model: "gpt-4"
+    priority: 1
+    enabled: true
+    config:
+      base_url: "https://api.openai.com/v1"
+      use_oauth: true
+      timeout: 30
+      max_retries: 3
+  
+  # Fallback 1: OpenAI Codex (current setup)
+  - name: "openai-codex"
+    type: "openai-codex"
+    model: "gpt-5.5"
+    priority: 2
+    enabled: true
+    config:
+      base_url: "https://chatgpt.com/backend-api/codex"
+      store: false
+      stream: true
+      timeout: 30
+      max_retries: 3
+  
+  # Fallback 2: OpenRouter
+  - name: "openrouter"
+    type: "openrouter"
+    model: "openrouter/free"
+    priority: 3
+    enabled: true
+    config:
+      base_url: "https://openrouter.ai/api/v1"
+      timeout: 30
+      max_retries: 3
+  
+  # Fallback 3: Anthropic
+  - name: "anthropic"
+    type: "anthropic"
+    model: "claude-3-sonnet"
+    priority: 4
+    enabled: false
+    config:
+      base_url: "https://api.anthropic.com/v1"
+      timeout: 30
+      max_retries: 3
+
+# LLM Selection Strategy
+llm_strategy:
+  auto_select: true
+  priority_order: ["openai-oauth", "openai-codex", "openrouter", "anthropic"]
+  fallback_on_error: true
+  max_fallback_attempts: 3
+  retry_delay: 2  # seconds
+
+# Rate Limiting
+rate_limits:
+  requests_per_minute: 60
+  tokens_per_minute: 10000
+  concurrent_requests: 4
+
+# Prometheus-specific Settings
+prometheus:
+  telemetry: false
+  reasoning_effort: "xhigh"
+  max_concurrent_scans: 4
+  auto_scans_enabled: false
+  use_hermes_model: true
+  validation_mode: "strict"
+
+# API Keys (for non-OAuth providers)
+api_keys:
+  openrouter: "your-openrouter-api-key"
+  anthropic: "your-anthropic-api-key"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "json"
+  file: "/mnt/hdd/prometheus-data/logs/prometheus.log"
+  max_size_mb: 100
+  backup_count: 5

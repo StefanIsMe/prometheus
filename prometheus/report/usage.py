@@ -171,6 +171,32 @@ def _estimate_litellm_entry_cost(entry: Any, model: str) -> float | None:
     if completion_details:
         usage_payload["completion_tokens_details"] = completion_details
 
+    # DeepSeek v4 direct pricing (LiteLLM doesn't have these yet as of 2026-06).
+    # Pricing per 1M tokens. Source: https://api-docs.deepseek.com/quick_start/pricing
+    # deepseek-v4-flash: cache-hit $0.0028, cache-miss $0.14, output $0.28
+    # deepseek-v4-pro:   cache-hit $0.003625, cache-miss $0.435, output $0.87
+    model_lower = model.lower()
+    if "deepseek-v4" in model_lower or "deepseek-v4" in model_lower:
+        if "v4-pro" in model_lower:
+            cache_hit_price = 0.003625 / 1_000_000
+            cache_miss_price = 0.435 / 1_000_000
+            output_price = 0.87 / 1_000_000
+        elif "v4-flash" in model_lower:
+            cache_hit_price = 0.0028 / 1_000_000
+            cache_miss_price = 0.14 / 1_000_000
+            output_price = 0.28 / 1_000_000
+        else:
+            cache_hit_price = 0.003625 / 1_000_000  # default to pro pricing
+            cache_miss_price = 0.435 / 1_000_000
+            output_price = 0.87 / 1_000_000
+
+        cached = _int_or_zero(prompt_details.get("cached_tokens", 0))
+        uncached = prompt_tokens - cached
+        cost = (cached * cache_hit_price
+                + uncached * cache_miss_price
+                + completion_tokens * output_price)
+        return max(cost, 0.0)
+
     try:
         from litellm import completion_cost
 
@@ -196,6 +222,18 @@ def _litellm_model_name(model: str | None) -> str | None:
         if normalized.startswith(prefix):
             normalized = normalized.removeprefix(prefix)
             break
+    # Auto-prefix known providers when model lacks provider/ prefix.
+    # LiteLLM's completion_cost requires provider/model format.
+    if "/" not in normalized:
+        try:
+            from prometheus.config.llm_config import get_config
+            config = get_config()
+            for provider_name, provider in config.providers.items():
+                if normalized in provider.models:
+                    normalized = f"{provider_name}/{normalized}"
+                    break
+        except Exception:
+            pass
     return normalized or None
 
 

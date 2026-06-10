@@ -28,7 +28,7 @@ RUN apt-get update && \
     less man-db procps htop \
     iproute2 iputils-ping netcat-traditional \
     nmap ncat ndiff \
-    sqlmap nuclei subfinder naabu ffuf \
+    sqlmap nuclei subfinder naabu ffuf wpscan \
     nodejs npm pipx \
     libcap2-bin \
     gdb \
@@ -37,6 +37,17 @@ RUN apt-get update && \
 
 
 RUN setcap cap_net_raw,cap_net_admin,cap_net_bind_service+eip $(which nmap)
+
+# Patch WPScan's one non-Tor network call — IPSocket.getaddress leaks DNS
+# This lives in the cms_scanner gem (parent class of WPScan::WebSite).
+# With socks5h:// proxy, all libcurl requests already resolve DNS through Tor.
+RUN WPSCAN_WEB_SITE=$(find /usr /var -path '*/cms_scanner/web_site.rb' -type f 2>/dev/null | head -1) && \
+    if [ -n "$WPSCAN_WEB_SITE" ]; then \
+        sed -i 's/@ip ||= IPSocket.getaddress(uri.host)/@ip ||= "\[Concealed\]"/' "$WPSCAN_WEB_SITE" && \
+        echo "Patched WPScan DNS leak (cms_scanner): $WPSCAN_WEB_SITE"; \
+    else \
+        echo "WARNING: cms_scanner web_site.rb not found — DNS leak NOT patched"; \
+    fi
 
 USER pentester
 RUN openssl ecparam -name prime256v1 -genkey -noout -out /app/certs/ca.key && \
@@ -133,17 +144,23 @@ USER root
 
 RUN curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin
 RUN set -eux; \
-    ARCH="$(uname -m)"; \
-    case "$ARCH" in \
-        x86_64) GITLEAKS_ARCH="x64" ;; \
-        aarch64|arm64) GITLEAKS_ARCH="arm64" ;; \
-        *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
-    esac; \
-    TAG="$(curl -fsSL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r .tag_name)"; \
-    curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/${TAG}/gitleaks_${TAG#v}_linux_${GITLEAKS_ARCH}.tar.gz" -o /tmp/gitleaks.tgz; \
-    tar -xzf /tmp/gitleaks.tgz -C /tmp; \
-    install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks; \
-    rm -f /tmp/gitleaks /tmp/gitleaks.tgz
+    for i in 1 2 3; do \
+        ARCH="$(uname -m)"; \
+        case "$ARCH" in \
+            x86_64) GITLEAKS_ARCH="x64" ;; \
+            aarch64|arm64) GITLEAKS_ARCH="arm64" ;; \
+            *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;; \
+        esac; \
+        TAG="$(curl -fsSL --retry 3 --max-time 30 https://api.github.com/repos/gitleaks/gitleaks/releases/latest | jq -r .tag_name)"; \
+        if curl -fsSL --retry 3 --max-time 60 "https://github.com/gitleaks/gitleaks/releases/download/${TAG}/gitleaks_${TAG#v}_linux_${GITLEAKS_ARCH}.tar.gz" -o /tmp/gitleaks.tgz; then \
+            tar -xzf /tmp/gitleaks.tgz -C /tmp; \
+            install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks; \
+            rm -f /tmp/gitleaks /tmp/gitleaks.tgz; \
+            break; \
+        fi; \
+        echo "gitleaks download attempt $i failed, retrying..."; \
+        sleep 5; \
+    done
 
 RUN apt-get update && apt-get install -y zaproxy
 
@@ -199,8 +216,8 @@ RUN python3 -m venv /app/.venv && \
         > /home/pentester/.local/bin/jwt_tool && \
     chmod +x /home/pentester/.local/bin/jwt_tool
 
-COPY --chown=pentester:pentester strix/tools/proxy/caido_api.py /opt/strix-python/caido_api.py
-ENV PYTHONPATH=/opt/strix-python
+COPY --chown=pentester:pentester prometheus/tools/proxy/caido_api.py /opt/prometheus-python/caido_api.py
+ENV PYTHONPATH=/opt/prometheus-python
 
 RUN echo 'export PATH="/home/pentester/go/bin:/home/pentester/.local/bin:/home/pentester/.npm-global/bin:$PATH"' >> /home/pentester/.bashrc && \
     echo 'export PATH="/home/pentester/go/bin:/home/pentester/.local/bin:/home/pentester/.npm-global/bin:$PATH"' >> /home/pentester/.profile

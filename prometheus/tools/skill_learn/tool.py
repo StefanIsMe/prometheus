@@ -15,6 +15,7 @@ from agents import RunContextWrapper, function_tool
 
 from prometheus.utils.resource_paths import get_prometheus_resource_path
 
+
 logger = logging.getLogger(__name__)
 
 _CUSTOM_SKILLS_DIR = get_prometheus_resource_path("skills") / "custom"
@@ -109,17 +110,16 @@ def _update_custom_skill_impl(
 
     if append:
         updated = existing.rstrip("\n") + "\n\n" + new_content.lstrip("\n")
-    else:
-        # Preserve frontmatter, replace body
-        if existing.startswith("---"):
-            end = existing.find("---", 3)
-            if end != -1:
-                frontmatter = existing[: end + 3]
-                updated = frontmatter + "\n\n" + new_content.lstrip("\n")
-            else:
-                updated = new_content
+    # Preserve frontmatter, replace body
+    elif existing.startswith("---"):
+        end = existing.find("---", 3)
+        if end != -1:
+            frontmatter = existing[: end + 3]
+            updated = frontmatter + "\n\n" + new_content.lstrip("\n")
         else:
             updated = new_content
+    else:
+        updated = new_content
 
     skill_path.write_text(updated, encoding="utf-8")
     logger.info("Updated custom skill: %s (append=%s)", skill_path, append)
@@ -137,6 +137,7 @@ def _list_custom_skills_impl() -> dict[str, Any]:
         try:
             content = skill_file.read_text(encoding="utf-8")
         except (OSError, ValueError):
+            logger.debug("Failed to read custom skill file %s", skill_file, exc_info=True)
             continue
         meta = _parse_frontmatter(content)
         mtime = datetime.fromtimestamp(skill_file.stat().st_mtime, tz=UTC).isoformat()
@@ -172,6 +173,7 @@ def _suggest_skill_update_impl(
                 if not isinstance(suggestions, list):
                     suggestions = []
             except (json.JSONDecodeError, OSError):
+                logger.debug("Failed to read skill suggestions file; starting fresh", exc_info=True)
                 suggestions = []
         suggestions.append(entry)
         _SUGGESTIONS_PATH.write_text(

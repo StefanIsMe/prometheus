@@ -1,3 +1,4 @@
+import asyncio
 import atexit
 import contextlib
 import logging
@@ -37,6 +38,13 @@ def _resolve_sandbox_image() -> str:
 
 
 async def run_cli(args: Any) -> None:  # noqa: PLR0915
+    from prometheus.core.paths import configure_runs_dir
+    settings = load_settings()
+    if settings.runtime.runs_dir:
+        configure_runs_dir(settings.runtime.runs_dir)
+    else:
+        configure_runs_dir("/mnt/hdd/prometheus-data")
+
     console = Console()
 
     start_text = Text()
@@ -172,6 +180,36 @@ async def run_cli(args: Any) -> None:  # noqa: PLR0915
 
             update_thread = threading.Thread(target=update_status, daemon=True)
             update_thread.start()
+
+            # Browser prescan — offline IDOR + info disclosure via local Chrome.
+            # Discovers in-scope assets via program DB match. Runs before the
+            # main Docker sandbox scan. Zero LLM token usage.
+            try:
+                from prometheus.tools.idor_scanner.prescan import run_browser_prescan
+                prescan_targets = await asyncio.to_thread(
+                    run_browser_prescan, scan_config.get("targets", [])
+                )
+                if prescan_targets:
+                    from prometheus.interface.utils import (
+                        assign_workspace_subdirs,
+                        infer_target_type,
+                        rewrite_localhost_targets,
+                    )
+                    original = scan_config["targets"][0]["original"]
+                    console.print(f"\n  Expanded scan targets: {original} -> {len(prescan_targets)} asset(s)")
+                    new_targets = []
+                    for t in prescan_targets:
+                        target_type, target_dict = infer_target_type(t)
+                        new_targets.append({
+                            "type": target_type,
+                            "details": target_dict,
+                            "original": t,
+                        })
+                    assign_workspace_subdirs(new_targets)
+                    rewrite_localhost_targets(new_targets, "host.docker.internal")
+                    scan_config["targets"] = new_targets
+            except Exception as e:
+                logger.warning("Browser prescan skipped: %s", e)
 
             try:
                 logger.info(

@@ -1,7 +1,7 @@
 """Agent-facing knowledge tools for cross-scan learning.
 
 These tools let the prometheus agent persist and retrieve facts across scans.
-Knowledge lives in ``~/.prometheus/knowledge.db`` and survives process
+Knowledge lives in ``~/.prometheus/prometheus.db`` and survives process
 restarts, making subsequent scans against the same target smarter.
 """
 
@@ -15,6 +15,7 @@ from typing import Any
 from agents import RunContextWrapper, function_tool
 
 from prometheus.tools.knowledge.store import KnowledgeStore
+
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ async def save_knowledge(
     - ``vulnerability`` — confirmed issues with reproduction details.
     - ``failed_approach`` — things that didn't work (save future time).
     - ``successful_technique`` — payloads or methods that succeeded.
+    - ``tor_status`` — whether target rejects Tor connections. Use key=``tor_rejected``, value=``true`` or ``false`` plus details.
 
     Args:
         target_id: Target domain or identifier (e.g. ``example.com``).
@@ -103,7 +105,7 @@ async def save_knowledge(
                         scan_id=None,
                     )
                 except Exception as exc:
-                    logger.debug("Failed to store CVE finding: %s", exc)
+                    logger.warning("Failed to store CVE finding: %s", exc, exc_info=True)
 
     response = {"knowledge_stored": result}
     if cve_findings:
@@ -134,6 +136,24 @@ async def _auto_cve_lookup(
         technology = ""
         version = ""
 
+        # Guard: reject values that are clearly descriptions, not tech names
+        # (long strings with many words, sentences, etc.)
+        value_stripped = tech_value.strip()
+        if len(value_stripped) > 100:
+            logger.debug("Auto CVE lookup: value too long (%d chars), likely description, skipping", len(value_stripped))
+            return None
+
+        word_count = len(value_stripped.split())
+        if word_count > 8:
+            logger.debug("Auto CVE lookup: value has %d words, likely description, skipping", word_count)
+            return None
+
+        # Guard: reject keys that look like descriptions too
+        key_stripped = tech_key.strip()
+        if len(key_stripped) > 60 or len(key_stripped.split()) > 5:
+            logger.debug("Auto CVE lookup: key too long/complex, likely description, skipping")
+            return None
+
         # Try to split value by common separators to find version
         # Pattern: "tech_name version" or "tech_name/version"
         for sep in ["/", " "]:
@@ -159,6 +179,11 @@ async def _auto_cve_lookup(
         if not technology:
             return None
 
+        # Guard: validate technology looks like a real tech name
+        if len(technology) > 60 or len(technology.split()) > 4:
+            logger.debug("Auto CVE lookup: extracted technology '%s' too long/complex, skipping", technology[:60])
+            return None
+
         # Clean up version (remove trailing garbage)
         if version:
             # Strip things like " LTS", " (current)", etc.
@@ -181,7 +206,7 @@ async def _auto_cve_lookup(
         return all_vulns if all_vulns else None
 
     except Exception as exc:
-        logger.warning("Auto CVE lookup failed for %s/%s: %s", tech_key, tech_value, exc)
+        logger.warning("Auto CVE lookup failed for %s/%s: %s", tech_key, tech_value, exc, exc_info=True)
         return None
 
 
@@ -201,7 +226,7 @@ async def query_knowledge(
         target_id: Target domain to query.
         category: Optional filter — one of ``tech_stack``, ``endpoint``,
             ``auth_mechanism``, ``vulnerability``, ``failed_approach``,
-            ``successful_technique``.
+            ``successful_technique``, ``tor_status``.
     """
     try:
         entries = await asyncio.to_thread(

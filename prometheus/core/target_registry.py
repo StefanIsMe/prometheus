@@ -7,6 +7,7 @@ instance per process.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import sqlite3
@@ -14,11 +15,12 @@ import threading
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
+
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_DB_PATH = Path.home() / ".prometheus" / "targets.db"
+_DEFAULT_DB_PATH = Path.home() / ".prometheus" / "prometheus.db"
 
 _instance: TargetRegistry | None = None
 _instance_lock = threading.Lock()
@@ -31,7 +33,7 @@ class TargetRegistry:
     connection per process.
     """
 
-    def __new__(cls, db_path: Path | str | None = None) -> TargetRegistry:
+    def __new__(cls, db_path: Path | str | None = None) -> Self:
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance
@@ -48,17 +50,14 @@ class TargetRegistry:
     # ------------------------------------------------------------------
 
     def _init(self, db_path: Path | str | None = None) -> None:
-        self._lock = threading.RLock()
-        self._db_path = Path(db_path) if db_path else _DEFAULT_DB_PATH
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(
-            str(self._db_path),
-            check_same_thread=False,
-        )
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        from prometheus.tools.knowledge.store import KnowledgeStore
+
+        self._store = KnowledgeStore(db_path)
+        self._lock = self._store._lock
+        self._db_path = self._store._db_path
+        self._conn = self._store._conn
         self._create_tables()
-        logger.info("TargetRegistry initialised at %s", self._db_path)
+        logger.info("TargetRegistry compatibility wrapper initialised at %s", self._db_path)
 
     def _create_tables(self) -> None:
         with self._lock:
@@ -106,16 +105,33 @@ class TargetRegistry:
         schedule_json = json.dumps(schedule or {}, ensure_ascii=False)
 
         with self._lock:
-            self._conn.execute(
-                """
-                INSERT INTO targets
-                    (id, domain, target_type, target_config, scan_config,
-                     schedule, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
-                """,
-                (target_id, domain, target_type, target_config_json,
-                 scan_config_json, schedule_json, now, now),
-            )
+            existing = self._conn.execute(
+                "SELECT id FROM targets WHERE domain = ? ORDER BY created_at DESC LIMIT 1",
+                (domain,),
+            ).fetchone()
+            if existing is not None:
+                target_id = existing["id"]
+                self._conn.execute(
+                    """
+                    UPDATE targets
+                    SET target_type = ?, target_config = ?, scan_config = ?,
+                        schedule = ?, status = 'active', updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (target_type, target_config_json, scan_config_json,
+                     schedule_json, now, target_id),
+                )
+            else:
+                self._conn.execute(
+                    """
+                    INSERT INTO targets
+                        (id, domain, target_type, target_config, scan_config,
+                         schedule, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
+                    """,
+                    (target_id, domain, target_type, target_config_json,
+                     scan_config_json, schedule_json, now, now),
+                )
             self._conn.commit()
 
         logger.info("Added target id=%s domain=%s type=%s", target_id, domain, target_type)
@@ -245,8 +261,6 @@ class TargetRegistry:
         # Parse JSON fields
         for field in ("target_config", "scan_config", "schedule"):
             if field in d and isinstance(d[field], str):
-                try:
+                with contextlib.suppress(json.JSONDecodeError, TypeError):
                     d[field] = json.loads(d[field])
-                except (json.JSONDecodeError, TypeError):
-                    pass
         return d

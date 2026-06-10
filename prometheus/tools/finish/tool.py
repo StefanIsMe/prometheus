@@ -11,9 +11,130 @@ from agents import RunContextWrapper, function_tool
 
 from prometheus.core.agents import coordinator_from_context
 from prometheus.tools.todo.tools import get_pending_high_priority_todos
+from prometheus.tools.ptg.tool import get_active_ptg
 
 
 logger = logging.getLogger(__name__)
+
+# Minimum phases that MUST be completed before finish_scan is accepted.
+# EXPLOITATION is skippable (no vulns found). REPORTING is completed by this call.
+_REQUIRED_PHASES = {"RECON", "FINGERPRINT", "THREAT_INTEL", "VULNERABILITY_SCAN"}
+_SKIPPABLE_PHASES = {"EXPLOITATION"}
+
+
+def _validate_scan_gates() -> dict[str, Any]:
+    """Check PTG phases and mandatory tool usage before allowing scan completion.
+
+    Returns a dict with 'passed' (bool) and 'blocked_reason' (str | None).
+    When passed=False, blocked_reason explains exactly what the agent must do.
+    """
+    ptg = get_active_ptg()
+    if ptg is None:
+        # No PTG — allow finish (backward compat)
+        return {"passed": True, "blocked_reason": None}
+
+    # Check each required phase
+    incomplete: list[str] = []
+    blocked_details: list[str] = []
+
+    for name in _REQUIRED_PHASES:
+        phase = ptg.phases.get(name)
+        if phase is None:
+            continue
+        if phase.status == "completed":
+            continue
+        incomplete.append(name)
+        missing_tools = phase.required_tools - phase.tools_called
+        detail = f"  {name}: status={phase.status}"
+        if missing_tools:
+            detail += f", missing tools: {', '.join(sorted(missing_tools))}"
+        detail += f"\n    Criteria: {phase.completion_criteria}"
+        blocked_details.append(detail)
+
+    # Check EXPLOITATION — must be completed or skipped
+    exploit = ptg.phases.get("EXPLOITATION")
+    if exploit and exploit.status not in ("completed", "skipped"):
+        incomplete.append("EXPLOITATION")
+        blocked_details.append(
+            f"  EXPLOITATION: status={exploit.status}\n"
+            f"    Criteria: {exploit.completion_criteria}\n"
+            f"    If no exploitable vulnerabilities were found, mark this phase as skipped."
+        )
+
+    if incomplete:
+        details = "\n".join(blocked_details)
+        return {
+            "passed": False,
+            "blocked_reason": (
+                f"Scan cannot finish. {len(incomplete)} phase(s) incomplete:\n\n"
+                f"{details}\n\n"
+                f"Complete these phases before calling finish_scan. "
+                f"Use get_scan_progress to check your current status."
+            ),
+        }
+
+    # --- Check factory-level gates (Tor, fingerprint, research, nuclei) ---
+    # These gates previously fired in _finish_tool_use_behavior AFTER the
+    # report was already written.  Moving them here ensures the report is
+    # only persisted when ALL gates pass.
+    try:
+        from prometheus.agents.factory import (
+            _research_gate_enabled,
+            _research_complete,
+            _RESEARCH_REQUIRED_TOOLS,
+            _research_calls,
+            _tor_gate_enabled,
+            _tor_verified,
+            _tor_ever_used,
+            _fingerprint_gate_enabled,
+            _fingerprint_done,
+            _nuclei_gate_enabled,
+            _nuclei_run,
+        )
+
+        if _tor_gate_enabled and not _tor_verified and _tor_ever_used:
+            return {
+                "passed": False,
+                "blocked_reason": (
+                    "Tor verification not confirmed. Run "
+                    "'curl -s --proxy socks5h://host.docker.internal:9050 "
+                    "https://check.torproject.org/api/ip' and verify "
+                    "'IsTor: true' before finishing."
+                ),
+            }
+
+        if _fingerprint_gate_enabled and not _fingerprint_done:
+            return {
+                "passed": False,
+                "blocked_reason": (
+                    "No technology fingerprinting detected. Run httpx, whatweb, "
+                    "or similar tools to identify the target stack before finishing."
+                ),
+            }
+
+        if _research_gate_enabled and not _research_complete():
+            missing = _RESEARCH_REQUIRED_TOOLS - _research_calls
+            return {
+                "passed": False,
+                "blocked_reason": (
+                    f"Mandatory research incomplete. "
+                    f"Missing tool calls: {', '.join(missing)}. "
+                    f"Call query_threat_feeds before finishing."
+                ),
+            }
+
+        if _nuclei_gate_enabled and not _nuclei_run:
+            return {
+                "passed": False,
+                "blocked_reason": (
+                    "Nuclei scan required. Run nuclei against at least one target "
+                    "before finishing."
+                ),
+            }
+    except ImportError:
+        pass  # factory.py not available (shouldn't happen in production)
+
+    return {"passed": True, "blocked_reason": None}
 
 
 def _do_finish(
@@ -166,6 +287,19 @@ async def finish_scan(
                     "Wait for completion, send them finish instructions, or stop them first"
                 ),
                 "active_agents": active_agents,
+            },
+            ensure_ascii=False,
+            default=str,
+        )
+
+    # --- GATE ENFORCEMENT: validate PTG phases before writing report ---
+    gate_result = _validate_scan_gates()
+    if not gate_result["passed"]:
+        return json.dumps(
+            {
+                "success": False,
+                "scan_completed": False,
+                "error": "GATE BLOCKED: " + gate_result["blocked_reason"],
             },
             ensure_ascii=False,
             default=str,

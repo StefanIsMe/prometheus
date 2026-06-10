@@ -48,6 +48,7 @@ Common patterns:
   `nuclei -l targets.txt -as -s critical,high -ni -stats -rl 30 -c 10 -bs 10 -timeout 10 -retries 1 -j -o nuclei_no_oast.jsonl`
 
 Critical correctness rules:
+- BEFORE any scan, discover the template path. Run `ls ~/nuclei-templates/ ~/.local/nuclei-templates/ /opt/nuclei-templates/ 2>/dev/null | head -3` to find installed templates. Use `-t <found_path>` explicitly — do NOT rely on `-as` alone, as it may load 0 templates if the config directory is misconfigured.
 - Provide a template selection method (`-as`, `-t`, or `-tags`); avoid unscoped broad runs.
 - Keep `-rl`, `-c`, and `-bs` explicit for predictable resource use.
 - Use `-ni` when outbound interactsh/OAST traffic is not expected or not allowed.

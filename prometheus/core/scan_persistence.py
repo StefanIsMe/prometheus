@@ -6,17 +6,19 @@ Thread-safe singleton pattern — one ``ScanPersistence`` instance per process.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import sqlite3
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
+
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_DB_PATH = Path.home() / ".prometheus" / "scans.db"
+_DEFAULT_DB_PATH = Path.home() / ".prometheus" / "prometheus.db"
 
 _instance: ScanPersistence | None = None
 _instance_lock = threading.Lock()
@@ -29,7 +31,7 @@ class ScanPersistence:
     connection per process.
     """
 
-    def __new__(cls, db_path: Path | str | None = None) -> ScanPersistence:
+    def __new__(cls, db_path: Path | str | None = None) -> Self:
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance
@@ -46,17 +48,14 @@ class ScanPersistence:
     # ------------------------------------------------------------------
 
     def _init(self, db_path: Path | str | None = None) -> None:
-        self._lock = threading.RLock()
-        self._db_path = Path(db_path) if db_path else _DEFAULT_DB_PATH
-        self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(
-            str(self._db_path),
-            check_same_thread=False,
-        )
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        from prometheus.tools.knowledge.store import KnowledgeStore
+
+        self._store = KnowledgeStore(db_path)
+        self._lock = self._store._lock
+        self._db_path = self._store._db_path
+        self._conn = self._store._conn
         self._create_tables()
-        logger.info("ScanPersistence initialised at %s", self._db_path)
+        logger.info("ScanPersistence compatibility wrapper initialised at %s", self._db_path)
 
     def _create_tables(self) -> None:
         with self._lock:
@@ -201,8 +200,6 @@ class ScanPersistence:
     def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         d = dict(row)
         if "scan_config" in d and isinstance(d["scan_config"], str):
-            try:
+            with contextlib.suppress(json.JSONDecodeError, TypeError):
                 d["scan_config"] = json.loads(d["scan_config"])
-            except (json.JSONDecodeError, TypeError):
-                pass
         return d

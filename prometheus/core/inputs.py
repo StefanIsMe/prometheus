@@ -14,10 +14,10 @@ if TYPE_CHECKING:
     from prometheus.config.settings import ReasoningEffort
 
 
-DEFAULT_MAX_TURNS = 999999  # effectively unlimited — Stefan wants no turn cap
+DEFAULT_MAX_TURNS = 100  # root agent: pipeline handles mechanical work, 100 turns is generous
 
 
-def build_root_task(scan_config: dict[str, Any]) -> str:
+def build_root_task(scan_config: dict[str, Any], *, is_rescan: bool = False, targets_with_knowledge: set[str] | None = None) -> str:
     targets = scan_config.get("targets", []) or []
     diff_scope = scan_config.get("diff_scope") or {}
     user_instructions = scan_config.get("user_instructions", "") or ""
@@ -80,6 +80,77 @@ def build_root_task(scan_config: dict[str, Any]) -> str:
         header_list = "\n".join(f"  - {h}" for h in custom_headers)
         task = f"{task}\n\nRequired HTTP headers (MUST be included in ALL requests):\n{header_list}"
 
+    # Build per-target recon strategy when targets_with_knowledge is provided.
+    # Avoids blanket "do not re-crawl" when only SOME targets have prior knowledge.
+    known_targets: set[str] = targets_with_knowledge or set()
+    all_targets: list[str] = [
+        t.get("details", {}).get("target_url", "")
+        or t.get("details", {}).get("target_repo", "")
+        or t.get("original", "")
+        for t in targets
+    ]
+    all_targets = [u for u in all_targets if u]
+    unknown_targets = [u for u in all_targets if u not in known_targets]
+
+    if is_rescan and targets_with_knowledge is not None and known_targets and unknown_targets:
+        # Mixed: some targets have prior knowledge, some don't
+        known_list = "\n".join(f"  - {u}" for u in all_targets if u in known_targets)
+        unknown_list = "\n".join(f"  - {u}" for u in unknown_targets)
+        threat_directive = f"""\
+Mixed prior-knowledge directives:
+- {len(known_targets)} target(s) have prior knowledge from previous scans. For these targets, use the injected knowledge — do NOT re-fingerprint or re-crawl unless content has likely changed. Validate previous findings with exact requests, promote unassessed knowledge entries.
+- {len(unknown_targets)} target(s) are NEW (no prior knowledge). For these targets, do FULL first-scan recon: fingerprint the tech stack, crawl for endpoints, analyze CSP/headers, extract JS bundles, map the attack surface.
+
+TARGETS WITH PRIOR KNOWLEDGE (use rescan efficiency):
+{known_list}
+
+TARGETS WITHOUT PRIOR KNOWLEDGE (do full first-scan recon):
+{unknown_list}
+
+- After recon, run query_threat_feeds for ALL detected technologies across ALL targets.
+- A finding is not reportable until a working PoC proves real security impact.
+- When you think you found a threat, convert it into a real PoC before reporting. Execute or otherwise live-verify the PoC and include the exact request/response evidence.
+
+HARD STOP — The following are NEVER reportable: server header version disclosure, missing security headers without exploit chain, technology fingerprinting, any finding where the PoC ends at "I observed version X", any CVSS 0.0 finding.
+Before calling create_vulnerability_report: (1) Does the PoC show actual harm? (2) Is CVSS > 0.0? (3) Would H1 mark this "informational"? If any answer is NO, do NOT report.
+""".strip()
+    elif is_rescan:
+        threat_directive = """\
+Mandatory rescan directives:
+- You already have a complete target profile, prior knowledge entries, and previous findings injected above. Use them. Do NOT re-discover what is already known.
+- Before making ANY LLM API call, check if the information already exists in the injected knowledge. If yes, use the knowledge directly — no LLM call needed.
+- Run deterministic tools first: nuclei templates, local threat intel DB queries, HTTP response fingerprinting via shell scripts. Only use the LLM after exhausting offline options.
+- For each previous finding: send the exact request from the finding evidence, verify the response matches, mark as "validated" or "fixed".
+- For each unassessed knowledge entry: build a minimal PoC, then file it as a formal finding with evidence.
+- Token efficiency: target 40% or fewer tokens than a first scan. If you exceed this, you are re-doing work that was already done.
+- Do NOT re-fingerprint the tech stack. Use the tech_stack entries from prior knowledge.
+- Do NOT re-crawl the site unless you have specific reason to believe content changed.
+- Finished means: all previous findings validated + all unassessed knowledge promoted or dismissed + any new attack surface checked. Not before.
+""".strip()
+    else:
+        threat_directive = """\
+Mandatory scan directives:
+- Before vulnerability testing, fingerprint the target technologies and call query_threat_feeds with every detected technology/version. Use CISA KEV, NVD, OSV.dev, GHSA, Exploit-DB/nuclei knowledge, and any available local security feed.
+- During discovery, actively look for known security threats mapped to the target stack, not just generic headers or banners.
+- Also look for novel target-specific security threats: broken business logic, authorization model gaps, trust-boundary mistakes, unsafe agent/MCP/tool flows, unexpected API state transitions, cache/proxy edge cases, and exploit chains that are not tied to a published CVE.
+- Web search is capped: use at most 3 web_search calls per concrete attack idea. After that, stop researching that idea and test it against the target.
+- A finding is not reportable until a working PoC proves real security impact. Reconnaissance, version disclosure, missing headers, reflected CORS, or discovered secrets are not enough unless you use them to access data, perform an unauthorized action, execute code, or otherwise prove impact.
+- When you think you found a threat, convert it into a real PoC before reporting. Execute or otherwise live-verify the PoC and include the exact request/response evidence.
+
+HARD STOP — The following are NEVER reportable as findings. Do NOT call create_vulnerability_report for them. Do NOT mention them in your response as findings:
+- Server header version disclosure (nginx, Apache, Cloudflare, etc.) — this is reconnaissance, not a vuln
+- Missing security headers (CSP, X-Frame-Options, HSTS) without a proven exploit chain
+- Technology fingerprinting or banner grabbing with no demonstrated impact
+- Any finding where the PoC ends at "I observed version X in the response" — PoC must show HARM
+- Any finding with CVSS score 0.0 (all CIA metrics are None)
+
+Before calling create_vulnerability_report, answer these three questions internally. If the answer to ANY is NO, do NOT call the tool:
+1. Did I prove this with a working PoC that shows actual harm (data accessed, action performed, code executed)?
+2. Is the CVSS score greater than 0.0 (at least one CIA metric is Low or higher)?
+3. Would a HackerOne triager mark this as "informational" or "not applicable"? If yes, discard it.
+""".strip()
+    task = f"{threat_directive}\n\n{task}"
+
     return task
 
 
@@ -114,12 +185,31 @@ def build_scope_context(scan_config: dict[str, Any]) -> dict[str, Any]:
 
 def make_model_settings(
     reasoning_effort: ReasoningEffort | None,
+    *,
+    store: bool = False,
+    supports_thinking: bool = False,
+    provider_name: str = "",
 ) -> ModelSettings:
+    # DeepSeek rejects tool_choice when thinking mode is active.
+    # Thinking mode is triggered by either supports_thinking flag OR
+    # reasoning_effort being set (the default is "xhigh").
+    # Omit tool_choice for those providers so SDK defaults to "auto".
+    from prometheus.config.llm_config import _THINKING_NO_TOOL_CHOICE_PROVIDERS
+
+    _tool_choice: str | None = "required"
+    _reasoning_active = (
+        supports_thinking
+        or (reasoning_effort is not None and reasoning_effort != "none")
+    )
+    if _reasoning_active and provider_name.lower() in _THINKING_NO_TOOL_CHOICE_PROVIDERS:
+        _tool_choice = None
+
     model_settings = ModelSettings(
         parallel_tool_calls=False,
-        tool_choice="required",
+        tool_choice=_tool_choice,
         retry=DEFAULT_MODEL_RETRY,
         include_usage=True,
+        store=store,
     )
     if reasoning_effort is not None:
         model_settings = model_settings.resolve(

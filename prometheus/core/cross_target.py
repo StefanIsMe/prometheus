@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any
+from typing import Any, Self
 
 from prometheus.core.target_registry import TargetRegistry
 from prometheus.tools.knowledge.store import KnowledgeStore
+
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,7 @@ class CrossTargetIntel:
     instance per process.
     """
 
-    def __new__(cls) -> CrossTargetIntel:
+    def __new__(cls) -> Self:
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance

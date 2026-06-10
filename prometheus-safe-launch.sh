@@ -79,10 +79,22 @@ else
 fi
 
 # --- 5. Check sandbox image exists ---
-if docker image inspect ghcr.io/useprometheus/prometheus-sandbox:0.1.13 >/dev/null 2>&1; then
-    log_ok "prometheus sandbox image present"
+IMAGE=$(python3 -c "import json; print(json.load(open('$HOME/.prometheus/cli-config.json'))['env'].get('PROMETHEUS_IMAGE','ghcr.io/usestrix/strix-sandbox:1.0.0'))" 2>/dev/null || echo "ghcr.io/usestrix/strix-sandbox:1.0.0")
+if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    log_ok "prometheus sandbox image present ($IMAGE)"
 else
-    log_warn "prometheus sandbox image not found (will pull on first run — ~15GB)"
+    log_warn "prometheus sandbox image not found: $IMAGE (will pull on first run — ~15GB)"
+fi
+
+# --- 5b. Check inode availability ---
+INODE_PCT=$(df -i /mnt/hdd | awk 'NR==2 {print $5}' | tr -d '%')
+if [ "$INODE_PCT" -gt 90 ]; then
+    log_fail "HDD inode usage at ${INODE_PCT}% — docker pull will likely fail. Run: docker system prune -a -f"
+    ERRORS=$((ERRORS + 1))
+elif [ "$INODE_PCT" -gt 75 ]; then
+    log_warn "HDD inode usage at ${INODE_PCT}% — may cause issues"
+else
+    log_ok "HDD inode usage at ${INODE_PCT}%"
 fi
 
 # --- 6. Check prometheus source exists ---

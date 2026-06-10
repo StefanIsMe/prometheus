@@ -20,6 +20,7 @@ _BASE_CONFIG = SettingsConfigDict(
 class LlmSettings(BaseSettings):
     model_config = _BASE_CONFIG
 
+    # Model routing comes from ~/.prometheus/llm.yaml and env vars.
     model: str | None = Field(default=None, alias="prometheus_LLM")
     api_key: str | None = Field(
         default=None,
@@ -35,7 +36,7 @@ class LlmSettings(BaseSettings):
             "OLLAMA_API_BASE",
         ),
     )
-    reasoning_effort: ReasoningEffort = Field(default="high", alias="prometheus_REASONING_EFFORT")
+    reasoning_effort: ReasoningEffort = Field(default="xhigh", alias="prometheus_REASONING_EFFORT")
     timeout: int = Field(default=300, alias="LLM_TIMEOUT")
 
 
@@ -43,11 +44,12 @@ class RuntimeSettings(BaseSettings):
     model_config = _BASE_CONFIG
 
     image: str = Field(
-        default="ghcr.io/useprometheus/prometheus-sandbox:1.0.0",
+        default="ghcr.io/usestrix/strix-sandbox:1.0.0",
         alias="prometheus_IMAGE",
     )
     backend: str = Field(default="docker", alias="prometheus_RUNTIME_BACKEND")
     max_concurrent_scans: int = Field(default=2, alias="prometheus_MAX_CONCURRENT_SCANS")
+    runs_dir: str | None = Field(default=None, alias="prometheus_RUNS_DIR")
 
 
 class TelemetrySettings(BaseSettings):

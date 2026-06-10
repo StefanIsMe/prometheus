@@ -320,6 +320,7 @@ async def create_note(
             tags = json.loads(tags)
         except (json.JSONDecodeError, TypeError):
             tags = [tags] if tags.strip() else None
+    logger.debug("create_note: title=%s category=%s tags=%s", title[:60], category, tags)
     return json.dumps(
         await asyncio.to_thread(_create_note_impl, title, content, category, tags),
         ensure_ascii=False,
@@ -359,6 +360,7 @@ async def list_notes(
             tags = json.loads(tags)
         except (json.JSONDecodeError, TypeError):
             tags = [tags] if tags.strip() else None
+    logger.debug("list_notes: category=%s tags=%s search=%s", category, tags, search)
     return json.dumps(
         await asyncio.to_thread(
             _list_notes_impl,

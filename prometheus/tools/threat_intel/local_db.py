@@ -6,13 +6,13 @@ import json
 import logging
 import os
 import sqlite3
-import time
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Self
+
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.path.expanduser("~/.prometheus/threat_intel.db")
+DB_PATH = os.path.expanduser("~/.prometheus/prometheus.db")
 
 
 class ThreatIntelDB:
@@ -34,10 +34,10 @@ class ThreatIntelDB:
     def close(self) -> None:
         self._conn.close()
 
-    def __enter__(self) -> ThreatIntelDB:
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, *args: object) -> None:
         self.close()
 
     def _migrate(self) -> None:
@@ -116,7 +116,7 @@ class ThreatIntelDB:
         raw_data: dict | None = None,
     ) -> None:
         """Insert or update a CVE entry. Merges sources if row exists."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         existing = self._conn.execute(
             "SELECT sources FROM cve WHERE cve_id = ?", (cve_id,)
         ).fetchone()
@@ -214,19 +214,34 @@ class ThreatIntelDB:
         duration_seconds: float = 0.0,
     ) -> None:
         """Update feed ingestion status."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         self._conn.execute("""
             INSERT INTO feed_status (feed_name, last_updated, record_count,
                 status, error_message, duration_seconds)
             VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(feed_name) DO UPDATE SET
-                last_updated = excluded.last_updated,
-                record_count = excluded.record_count,
-                status = excluded.status,
-                error_message = excluded.error_message,
-                duration_seconds = excluded.duration_seconds
         """, (feed_name, now, record_count, status, error_message, duration_seconds))
         self._conn.commit()
+
+    def get_feed_freshness(self, max_age_seconds: int = 86400) -> set[str]:
+        """Return set of feed names that were updated within *max_age_seconds*."""
+        fresh: set[str] = set()
+        try:
+            now = datetime.now(UTC)
+            for row in self._conn.execute(
+                "SELECT feed_name, last_updated FROM feed_status"
+            ).fetchall():
+                name = row[0]
+                updated = row[1]
+                if name and updated:
+                    try:
+                        ts = datetime.fromisoformat(updated).replace(tzinfo=UTC)
+                        if (now - ts).total_seconds() < max_age_seconds:
+                            fresh.add(name)
+                    except (ValueError, TypeError):
+                        pass
+        except Exception:
+            pass
+        return fresh
 
     def commit(self) -> None:
         """Explicit commit — call after batch operations."""

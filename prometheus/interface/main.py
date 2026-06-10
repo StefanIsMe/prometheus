@@ -6,12 +6,16 @@ prometheus Agent Interface
 # Apply httpx zstd patch BEFORE any imports that trigger LiteLLM
 # (OpenGateway sends zstd-compressed bodies that httpx can't decompress)
 from prometheus.config.models import _patch_httpx_no_zstd
+
+
 _patch_httpx_no_zstd()
 
 import argparse
 import asyncio
 import atexit
+import contextlib
 import logging
+import os
 import shutil
 import sys
 import threading
@@ -34,6 +38,7 @@ from prometheus.config import (
 )
 from prometheus.config.models import configure_sdk_model_defaults, normalize_model_name
 from prometheus.core.paths import run_dir_for, runtime_state_dir
+from prometheus.core.rate_limiter import set_rate
 from prometheus.interface.cli import run_cli
 from prometheus.interface.tui import run_tui
 from prometheus.interface.utils import (
@@ -52,7 +57,6 @@ from prometheus.interface.utils import (
     validate_config_file,
 )
 from prometheus.report.state import get_global_report_state
-from prometheus.core.rate_limiter import set_rate
 from prometheus.report.writer import read_run_record, write_run_record
 from prometheus.telemetry import posthog, scarf
 from prometheus.telemetry.logging import configure_dependency_logging
@@ -71,9 +75,17 @@ def validate_environment() -> None:
     missing_optional_vars = []
 
     settings = load_settings()
+    resolution = configure_sdk_model_defaults(settings)
+    logger.info(
+        "Environment model routing: provider=%s model=%s base_url=%s tier=%s",
+        resolution.provider_name,
+        resolution.model_id,
+        resolution.base_url,
+        resolution.tier.value,
+    )
 
-    if not settings.llm.model:
-        missing_required_vars.append("prometheus_LLM")
+    # LLM routing comes from ~/.prometheus/llm.yaml and env vars.
+    # No Hermes dependency.
 
     if not settings.llm.api_key:
         missing_optional_vars.append("LLM_API_KEY")
@@ -212,12 +224,17 @@ async def warm_up_llm() -> None:
         configure_sdk_model_defaults(settings)
         llm = settings.llm
 
-        model = MultiProvider().get_model(normalize_model_name(llm.model or ""))
-        await asyncio.wait_for(
-            model.get_response(
+        # Use unknown_prefix_mode="model_id" so non-SDK prefixed model
+        # names (e.g. stepfun/step-3.7-flash:free) reach the OpenAI-compatible
+        # gateway verbatim instead of raising UserError: Unknown prefix.
+        model = MultiProvider(unknown_prefix_mode="model_id").get_model(
+            normalize_model_name(llm.model or "")
+        )
+        async def _consume_warmup_stream() -> None:
+            async for _ in model.stream_response(
                 system_instructions="You are a helpful assistant.",
                 input="Reply with just 'OK'.",
-                model_settings=ModelSettings(),
+                model_settings=ModelSettings(store=False),
                 tools=[],
                 output_schema=None,
                 handoffs=[],
@@ -225,9 +242,10 @@ async def warm_up_llm() -> None:
                 previous_response_id=None,
                 conversation_id=None,
                 prompt=None,
-            ),
-            timeout=llm.timeout,
-        )
+            ):
+                pass
+
+        await asyncio.wait_for(_consume_warmup_stream(), timeout=llm.timeout)
         logger.info("LLM warm-up succeeded for model %s", normalize_model_name(llm.model or ""))
 
     except Exception as e:
@@ -324,7 +342,7 @@ Examples:
         type=str,
         help="Path to a JSON file defining multiple scans to launch. "
         "Each scan can have its own targets, instruction, and scan mode. "
-        "Example format: [{\"targets\": [\"https://example.com\"], \"instruction\": \"focus on auth\", \"mode\": \"deep\"}]",
+        'Example format: [{"targets": ["https://example.com"], "instruction": "focus on auth", "mode": "deep"}]',
     )
     parser.add_argument(
         "--instruction",
@@ -463,38 +481,37 @@ Examples:
                 f"there's nothing to resume from. Pick a fresh --run-name "
                 f"or remove --resume to start over with the same targets."
             )
+    elif args.scans_file:
+        # Scans file mode: validate file exists
+        if not Path(args.scans_file).exists():
+            parser.error(f"Scans file not found: {args.scans_file}")
+        args.targets_info = []
+    elif args.browse:
+        # Browse mode: no target needed, launch TUI in reports-only mode
+        args.targets_info = []
+    elif not args.target:
+        # Default to browse mode when no targets provided
+        args.browse = True
+        args.targets_info = []
     else:
-        if args.scans_file:
-            # Scans file mode: validate file exists
-            if not Path(args.scans_file).exists():
-                parser.error(f"Scans file not found: {args.scans_file}")
-            args.targets_info = []
-        elif args.browse:
-            # Browse mode: no target needed, launch TUI in reports-only mode
-            args.targets_info = []
-        elif not args.target:
-            # Default to browse mode when no targets provided
-            args.browse = True
-            args.targets_info = []
-        else:
-            args.targets_info = []
-            for target in args.target:
-                try:
-                    target_type, target_dict = infer_target_type(target)
+        args.targets_info = []
+        for target in args.target:
+            try:
+                target_type, target_dict = infer_target_type(target)
 
-                    if target_type == "local_code":
-                        display_target = target_dict.get("target_path", target)
-                    else:
-                        display_target = target
+                if target_type == "local_code":
+                    display_target = target_dict.get("target_path", target)
+                else:
+                    display_target = target
 
-                    args.targets_info.append(
-                        {"type": target_type, "details": target_dict, "original": display_target}
-                    )
-                except ValueError:
-                    parser.error(f"Invalid target '{target}'")
+                args.targets_info.append(
+                    {"type": target_type, "details": target_dict, "original": display_target}
+                )
+            except ValueError:
+                parser.error(f"Invalid target '{target}'")
 
-            assign_workspace_subdirs(args.targets_info)
-            rewrite_localhost_targets(args.targets_info, HOST_GATEWAY_HOSTNAME)
+        assign_workspace_subdirs(args.targets_info)
+        rewrite_localhost_targets(args.targets_info, HOST_GATEWAY_HOSTNAME)
 
     return args
 
@@ -690,7 +707,7 @@ def pull_docker_image() -> None:
 
 def _load_scans_file(path: str) -> list[dict[str, Any]]:
     """Load scan definitions from a JSON file.
-    
+
     Expected format:
     [
         {
@@ -702,13 +719,13 @@ def _load_scans_file(path: str) -> list[dict[str, Any]]:
             "headers": ["Authorization: Bearer xxx"]
         },
         {
-            "name": "eToro", 
+            "name": "eToro",
             "targets": ["https://sts.etoro.com", "https://kyc.etoro.com"],
             "instruction_file": "/tmp/etoro-instructions.txt",
             "mode": "deep"
         }
     ]
-    
+
     All fields except "targets" are optional. Defaults:
     - name: derived from first target domain
     - mode: "deep"
@@ -717,31 +734,31 @@ def _load_scans_file(path: str) -> list[dict[str, Any]]:
     """
     import json as json_mod
     from pathlib import Path
-    
+
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Scans file not found: {path}")
-    
+
     with p.open(encoding="utf-8") as f:
         data = json_mod.load(f)
-    
+
     if not isinstance(data, list):
         raise ValueError("Scans file must be a JSON array of scan objects")
-    
+
     scans = []
     for i, entry in enumerate(data):
         if not isinstance(entry, dict):
             raise ValueError(f"Scan entry {i} must be an object")
         if "targets" not in entry or not entry["targets"]:
             raise ValueError(f"Scan entry {i} missing 'targets'")
-        
+
         # Resolve instruction from file if specified
         instruction = entry.get("instruction", "")
         if entry.get("instruction_file"):
             instr_path = Path(entry["instruction_file"])
             if instr_path.exists():
                 instruction = instr_path.read_text(encoding="utf-8").strip()
-        
+
         scans.append({
             "name": entry.get("name") or entry["targets"][0].split("//")[-1].split("/")[0],
             "targets": entry["targets"],
@@ -749,7 +766,7 @@ def _load_scans_file(path: str) -> list[dict[str, Any]]:
             "mode": entry.get("mode", "deep"),
             "headers": entry.get("headers", []),
         })
-    
+
     return scans
 
 
@@ -758,6 +775,12 @@ def main() -> None:
 
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    # Dispatch `prometheus model` before parse_arguments, which expects scan flags
+    if len(sys.argv) > 1 and sys.argv[1] == "model":
+        from prometheus.interface.model_cli import run_model_cli
+        run_model_cli(sys.argv[2:])
+        return
 
     args = parse_arguments()
 
@@ -784,8 +807,9 @@ def main() -> None:
     # Handle --scans-file: register targets and launch parallel scans
     if args.scans_file:
         import time as _time
+
+        from prometheus.core.comms import get_status_summary
         from prometheus.core.target_registry import TargetRegistry
-        from prometheus.core.comms import get_status_summary, list_active_runs
 
         scans = _load_scans_file(args.scans_file)
 
@@ -832,7 +856,7 @@ def main() -> None:
         orchestrator = ScanOrchestrator()
         scan_map = {}  # scan_id -> (target_id, name)
 
-        for target_id, name, count in target_ids:
+        for target_id, name, _count in target_ids:
             if orchestrator.get_scan_for_target(target_id) is not None:
                 console.print(f"  [yellow]~[/] {name}: already has active scan, skipping")
                 continue
@@ -877,14 +901,14 @@ def main() -> None:
             try:
                 import subprocess
                 result = subprocess.run(
-                    ["docker", "ps", "--filter", "ancestor=ghcr.io/useprometheus/prometheus-sandbox:1.0.0",
+                    ["docker", "ps", "--filter", "ancestor=ghcr.io/usestrix/strix-sandbox:1.0.0",
                      "--format", "{{.ID}}"],
                     capture_output=True, text=True, timeout=10,
                 )
                 container_ids = result.stdout.strip().split()
                 if container_ids:
-                    subprocess.run(["docker", "stop"] + container_ids, capture_output=True, timeout=30)
-                    subprocess.run(["docker", "rm"] + container_ids, capture_output=True, timeout=10)
+                    subprocess.run(["docker", "stop", *container_ids], capture_output=True, timeout=30)
+                    subprocess.run(["docker", "rm", *container_ids], capture_output=True, timeout=10)
                     logger.info("Cleaned up %d orphaned containers", len(container_ids))
             except Exception:
                 logger.debug("Container cleanup failed", exc_info=True)
@@ -892,8 +916,8 @@ def main() -> None:
         atexit.register(_cleanup)
 
         # Monitor loop: poll orchestrator status + comms events
-        terminal_states = {"completed", "failed", "stopped"}
-        last_event_line = {sid: 0 for sid in scan_map}
+
+        last_event_line = dict.fromkeys(scan_map, 0)
 
         while not _shutdown_requested.is_set():
             all_done = True
@@ -981,10 +1005,8 @@ def main() -> None:
         #   RuntimeError: cannot schedule new futures after shutdown
         # Solution: explicitly shut down scans and wait for threads here,
         # BEFORE the interpreter exits.
-        try:
+        with contextlib.suppress(Exception):
             orchestrator.shutdown_all()
-        except Exception:
-            pass
 
         # Final summary
         console.print("\n[bold]All scans finished.[/]\n")
@@ -1010,7 +1032,7 @@ def main() -> None:
 
         console.print()
         return
-    
+
     args.run_name = args.resume or generate_run_name(args.targets_info)
 
     if not args.resume:
@@ -1057,6 +1079,11 @@ def main() -> None:
 
         _persist_run_record(args)
 
+    # Browser prescan is now deferred to the TUI/CLI layer so the UI
+    # appears immediately. It runs inside _start_scan_thread() for TUI
+    # mode or inside run_cli() for non-interactive mode — both call
+    # run_browser_prescan as the first step before the Docker sandbox scan.
+
     _telemetry_start_kwargs = {
         "model": load_settings().llm.model,
         "scan_mode": args.scan_mode,
@@ -1098,6 +1125,12 @@ def main() -> None:
         report_state = get_global_report_state()
         if report_state and report_state.vulnerability_reports:
             sys.exit(2)
+
+    # Force exit: daemon threads and atexit handlers may still be running.
+    # os._exit bypasses Python's finalization to guarantee a clean quit.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":

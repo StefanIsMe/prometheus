@@ -1,6 +1,6 @@
 ---
 title: "Contributing"
-description: "Contribute to Strix development"
+description: "Contribute to Prometheus development"
 ---
 
 ## Development Setup
@@ -17,8 +17,8 @@ description: "Contribute to Strix development"
 <Steps>
   <Step title="Clone the repository">
     ```bash
-    git clone https://github.com/usestrix/strix.git
-    cd strix
+    git clone https://github.com/useprometheus/prometheus.git
+    cd prometheus
     ```
   </Step>
   <Step title="Install dependencies">
@@ -32,20 +32,20 @@ description: "Contribute to Strix development"
   </Step>
   <Step title="Configure LLM">
     ```bash
-    export STRIX_LLM="openai/gpt-5.4"
+    export PROMETHEUS_LLM="openai/gpt-5.4"
     export LLM_API_KEY="your-api-key"
     ```
   </Step>
-  <Step title="Run Strix">
+  <Step title="Run Prometheus">
     ```bash
-    uv run strix --target https://example.com
+    uv run prometheus --target https://example.com
     ```
   </Step>
 </Steps>
 
 ## Contributing Skills
 
-Skills are specialized knowledge packages that enhance agent capabilities. They live in `strix/skills/`
+Skills are specialized knowledge packages that enhance agent capabilities. They live in `prometheus/skills/`
 
 ### Creating a Skill
 
@@ -79,7 +79,7 @@ Skills are specialized knowledge packages that enhance agent capabilities. They 
 Include:
 
 - Python version and OS
-- Strix version (`strix --version`)
+- Prometheus version (`prometheus --version`)
 - LLM being used
 - Full error traceback
 - Steps to reproduce
@@ -87,10 +87,10 @@ Include:
 ## Community
 
 <CardGroup cols={2}>
-  <Card title="Discord" icon="discord" href="https://discord.gg/strix-ai">
+  <Card title="Discord" icon="discord" href="https://discord.gg/prometheus-ai">
     Join the community for help and discussion.
   </Card>
-  <Card title="GitHub Issues" icon="github" href="https://github.com/usestrix/strix/issues">
+  <Card title="GitHub Issues" icon="github" href="https://github.com/useprometheus/prometheus/issues">
     Report bugs and request features.
   </Card>
 </CardGroup>

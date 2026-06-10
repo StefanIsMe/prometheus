@@ -14,7 +14,7 @@ Before performing vulnerability scanning, always gather threat intelligence to i
 - OSV.dev (open source vulnerabilities)
 - GHSA (GitHub Security Advisories)
 
-The tool takes a list of `{technology, version}` fingerprints and returns prioritized CVEs with scores. Feed data is pre-cached daily at 06:00 ICT via systemd timer.
+The tool takes a list of `{technology, version}` fingerprints and returns prioritized CVEs with scores. Feed data is pre-cached daily at 06:00 ICT via systemd timer. Cache location: `/mnt/hdd/prometheus-data/threat-intel/`.
 
 ## Pre-Scan Intelligence Gathering
 

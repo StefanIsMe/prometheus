@@ -13,12 +13,15 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from rich.text import Text
-from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Static
+
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
+
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +113,7 @@ class ProgramsPanel(VerticalScroll):
                 targets = registry.list_targets(status="active")
                 target_map = {}
                 for t in targets:
-                    tc = t.get("target_config") or {}
+
                     domain = t.get("domain", "")
                     target_map[domain] = t
             except Exception:
@@ -155,12 +158,11 @@ class ProgramsPanel(VerticalScroll):
         # Count by platform
         h1_count = sum(1 for p in programs if p.get("platform") == "hackerone")
         bc_count = sum(1 for p in programs if p.get("platform") == "bugcrowd")
-        auto_count = sum(1 for p in programs if p.get("auto_scan_enabled"))
 
         summary.update(
             f"Programs: [bold]{len(programs)}[/bold]  |  "
             f"H1: {h1_count}  |  BC: {bc_count}  |  "
-            f"Auto-scan: [green]{auto_count}[/green]"
+            f"Auto-scan: [red]DISABLED[/red]"
         )
 
         for program in programs:
@@ -196,8 +198,8 @@ class ProgramsPanel(VerticalScroll):
 
         # Auto-scan badge
         auto_badge = (
-            "[green]AUTO-SCAN ON[/green]" if auto_scan
-            else "[dim]AUTO-SCAN OFF[/dim]"
+            "[red]AUTO-SCAN DISABLED[/red]" if auto_scan
+            else "[dim]auto-scan off[/dim]"
         )
 
         # Schedule info from scheduler
@@ -294,8 +296,12 @@ class ProgramsPanel(VerticalScroll):
         )
 
     def action_toggle_scan(self) -> None:
-        """Toggle auto-scan on the selected program. TODO: implement selection."""
-        pass
+        """Toggle auto-scan on the selected program."""
+        self.app.notify(
+            "Program selection not yet implemented. "
+            "Edit programs.json directly to toggle auto_scan_enabled.",
+            severity="warning",
+        )
 
 
 class TargetsPanel(VerticalScroll):
@@ -331,9 +337,9 @@ class TargetsPanel(VerticalScroll):
     def _load_targets(self) -> None:
         """Load all targets from registry + scheduler info."""
         try:
-            from prometheus.core.target_registry import TargetRegistry
-            from prometheus.core.scheduler import ScanScheduler
             from prometheus.core.scan_persistence import ScanPersistence
+            from prometheus.core.scheduler import ScanScheduler
+            from prometheus.core.target_registry import TargetRegistry
 
             registry = TargetRegistry()
             scheduler = ScanScheduler()
@@ -387,8 +393,8 @@ class TargetsPanel(VerticalScroll):
         except Exception:
             return
 
-        sched_status = "[green]RUNNING[/green]" if scheduler.is_running else "[red]STOPPED[/red]"
-        summary.update(f"Scheduler: {sched_status}  |  Targets: {len(targets)}")
+        sched_status = "[red]DISABLED[/red]"
+        summary.update(f"Auto-scan: {sched_status}  |  Targets: {len(targets)}")
 
         # Clear
         for child in list(target_list.children):
@@ -414,14 +420,11 @@ class TargetsPanel(VerticalScroll):
         target_type = target.get("target_type", "url")
         target_config = target.get("target_config") or {}
         scan_config = target.get("scan_config") or {}
-        schedule = target.get("schedule") or {}
 
         display_name = target_config.get("display_name", domain)
 
-        # Schedule info
+        # Schedule info (auto-scans disabled, but badges still shown)
         sched_info = schedule_map.get(tid, {})
-        interval = sched_info.get("interval_hours", schedule.get("interval_hours", 24))
-        next_scan = sched_info.get("next_scan_at", schedule.get("next_scan_at"))
         paused = sched_info.get("paused", False)
         had_vulns = sched_info.get("had_vulns", False)
 
@@ -431,35 +434,9 @@ class TargetsPanel(VerticalScroll):
         custom_headers = scan_config.get("custom_headers", [])
         targets_list = scan_config.get("targets", [])
 
-        # Format next scan
-        next_display = "Not scheduled"
-        if next_scan:
-            try:
-                dt = datetime.fromisoformat(next_scan)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=UTC)
-                now = datetime.now(UTC)
-                delta_hours = (dt - now).total_seconds() / 3600
-                if delta_hours <= 0:
-                    next_display = "[yellow]DUE NOW[/yellow]"
-                else:
-                    next_display = f"in {delta_hours:.1f}h ({dt.strftime('%H:%M UTC')})"
-            except (ValueError, TypeError):
-                next_display = str(next_scan)
-
         # Status badges
         pause_badge = " [yellow]PAUSED[/yellow]" if paused else ""
         vuln_badge = " [red]HAD VULNS[/red]" if had_vulns else ""
-
-        # Interval reason
-        if interval == 12:
-            interval_reason = "vuln targets"
-        elif interval == 72:
-            interval_reason = "3+ clean scans"
-        elif interval == 24:
-            interval_reason = "default"
-        else:
-            interval_reason = "override"
 
         # Build card
         card_lines = [
@@ -467,7 +444,7 @@ class TargetsPanel(VerticalScroll):
             f"  ID: {tid}  |  Type: {target_type}  |  Domain: {domain}",
             "",
             "[bold]Schedule:[/bold]",
-            f"  Interval: {interval}h ({interval_reason})  |  Next scan: {next_display}",
+            "  [red]Auto-scanning is disabled[/red]",
             "",
             "[bold]Scan Config:[/bold]",
             f"  Mode: {scan_mode}  |  Headers: {len(custom_headers)} custom",
@@ -530,8 +507,12 @@ class TargetsPanel(VerticalScroll):
             self._load_targets()
 
     def action_toggle_pause(self) -> None:
-        """Toggle pause on selected target. TODO: implement with selection."""
-        pass
+        """Toggle pause on selected target."""
+        self.app.notify(
+            "Target selection not yet implemented. "
+            "Use the Automated Scans tab to manage running scans.",
+            severity="warning",
+        )
 
 
 class AutomatedScansPanel(VerticalScroll):
@@ -594,6 +575,10 @@ class AutomatedScansPanel(VerticalScroll):
 
             historical = [dict(row) for row in rows]
             self._render_scan_list(active_scans, historical)
+
+            # Auto-refresh detail panel for running scans
+            if self._selected_scan_id:
+                self._show_scan_detail(self._selected_scan_id)
         except Exception as exc:
             logger.exception("Failed to refresh automated scans")
             try:
@@ -614,8 +599,7 @@ class AutomatedScansPanel(VerticalScroll):
         except Exception:
             return
 
-        for child in list(scan_list.children):
-            child.remove()
+        scan_list.remove_children()
 
         active_ids = {s["scan_id"] for s in active}
         all_scans = list(active)
@@ -648,29 +632,57 @@ class AutomatedScansPanel(VerticalScroll):
                 except (ValueError, TypeError):
                     pass
 
-            selected_mark = " > " if sid == self._selected_scan_id else "   "
+            is_selected = sid == self._selected_scan_id
+            selected_mark = "[bold white]>[/bold white] " if is_selected else "  "
 
             findings_str = ""
             if findings > 0:
-                findings_str = f"  [red]{findings} findings[/red]"
+                findings_str = f"  [bold red]{findings} findings[/bold red]"
             elif status == "completed":
-                findings_str = "  [green]clean[/green]"
+                findings_str = "  [dim green]clean[/dim green]"
 
-            label = f"{selected_mark}[{color}]{status.upper():<10}[/{color}] {target:<25} {started}{findings_str}"
+            label = f"{selected_mark}[{color}]{status.upper()}[/{color}]  [bold]{target}[/bold]  [dim]{started}[/dim]{findings_str}"
 
-            btn = Button(label, id=f"scan_btn_{sid}", variant="default")
-            btn.styles.height = 1
-            scan_list.mount(btn)
+            item = Static(label, id=f"scan_item_{sid}", classes="scan-item")
+            item.can_focus = True
+            try:
+                scan_list.mount(item)
+            except Exception:
+                # DuplicateIds race: remove_children() is async and the old widget
+                # may still be in the DOM. Remove it synchronously and retry.
+                try:
+                    existing = scan_list.query(f"#{item.id}")
+                    for w in existing:
+                        w._pruning = True
+                        scan_list._nodes._nodes.remove(w)
+                        scan_list._nodes._nodes_set.discard(w)
+                        scan_list._nodes._nodes_by_id.pop(item.id, None)
+                        scan_list._nodes._updates += 1
+                except Exception:
+                    pass
+                scan_list.mount(item)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id or ""
         if btn_id == "auto_refresh_btn":
             self._refresh_scans()
-        elif btn_id.startswith("scan_btn_"):
-            scan_id = btn_id.replace("scan_btn_", "")
+
+    def on_click(self, event) -> None:
+        """Handle clicks on scan list items."""
+        widget = event.widget
+        if widget is not None and widget.id and widget.id.startswith("scan_item_"):
+            scan_id = widget.id.replace("scan_item_", "")
             self._selected_scan_id = scan_id
             self._show_scan_detail(scan_id)
             self._refresh_scans()
+
+    def on_focus(self, event) -> None:
+        """Handle keyboard focus on scan list items."""
+        widget = event.control
+        if widget is not None and widget.id and widget.id.startswith("scan_item_"):
+            scan_id = widget.id.replace("scan_item_", "")
+            self._selected_scan_id = scan_id
+            self._show_scan_detail(scan_id)
 
     def _show_scan_detail(self, scan_id: str) -> None:
         """Show details for a specific scan."""
@@ -705,6 +717,16 @@ class AutomatedScansPanel(VerticalScroll):
                 if error:
                     lines.append(f"[red]Error: {error}[/red]")
 
+                # Show vulnerability reports from in-memory state
+                if instance.report_state and instance.report_state.vulnerability_reports:
+                    lines.append("\n[bold]Vulnerability Reports:[/bold]")
+                    for vuln in instance.report_state.vulnerability_reports:
+                        vid = vuln.get("id", "?")
+                        vtitle = vuln.get("title", "Unknown")
+                        vsev = vuln.get("severity", "info")
+                        vcolor = STATUS_COLORS.get(vsev, "#6b7280")
+                        lines.append(f"  [{vcolor}]{vid}[/{vcolor}]  {vtitle}  [{vcolor}]{vsev.upper()}[/{vcolor}]")
+
                 if instance.live_view and instance.live_view.events:
                     lines.append("\n[bold]Recent Events:[/bold]")
                     for event in instance.live_view.events[-15:]:
@@ -715,20 +737,56 @@ class AutomatedScansPanel(VerticalScroll):
 
                 detail.update("\n".join(lines))
             else:
+                # Scan no longer in memory — load from persistence + disk
                 persistence = ScanPersistence()
                 scan_data = persistence.get_scan(scan_id)
-                if scan_data:
-                    lines = [
-                        f"[bold]Scan: {scan_id}[/bold]",
-                        f"Target: {scan_data.get('target_name', '?')}",
-                        f"Status: {scan_data.get('status', '?').upper()}",
-                        f"Started: {scan_data.get('started_at', '?')}",
-                        f"Ended: {scan_data.get('ended_at', '?')}",
-                        f"Findings: {scan_data.get('findings_count', 0)}",
-                    ]
-                    detail.update("\n".join(lines))
-                else:
+                if not scan_data:
                     detail.update(f"[dim]Scan {scan_id} not found[/dim]")
+                    return
+
+                lines = [
+                    f"[bold]Scan: {scan_id}[/bold]",
+                    f"Target: {scan_data.get('target_name', '?')}",
+                    f"Status: {scan_data.get('status', '?').upper()}",
+                    f"Started: {scan_data.get('started_at', '?')}",
+                    f"Ended: {scan_data.get('ended_at', '?')}",
+                    f"Findings: {scan_data.get('findings_count', 0)}",
+                ]
+
+                # Load vulnerability reports from disk
+                run_dir = scan_data.get("run_dir", "")
+                if run_dir:
+                    vulns_path = Path(run_dir) / "vulnerabilities.json"
+                    if vulns_path.exists():
+                        try:
+                            import json as _json
+                            vulns = _json.loads(vulns_path.read_text(encoding="utf-8"))
+                            if vulns:
+                                lines.append("\n[bold]Vulnerability Reports:[/bold]")
+                                for vuln in vulns:
+                                    if not isinstance(vuln, dict):
+                                        continue
+                                    vid = vuln.get("id", "?")
+                                    vtitle = vuln.get("title", "Unknown")
+                                    vsev = vuln.get("severity", "info")
+                                    vcolor = STATUS_COLORS.get(vsev, "#6b7280")
+                                    lines.append(f"  [{vcolor}]{vid}[/{vcolor}]  {vtitle}  [{vcolor}]{vsev.upper()}[/{vcolor}]")
+                        except Exception:
+                            lines.append("  [dim]Could not load vulnerability reports from disk[/dim]")
+
+                    # Also load executive report if available
+                    exec_path = Path(run_dir) / "penetration_test_report.md"
+                    if exec_path.exists():
+                        try:
+                            content = exec_path.read_text(encoding="utf-8")
+                            preview = content[:500]
+                            if len(content) > 500:
+                                preview += "..."
+                            lines.append(f"\n[bold]Executive Report:[/bold]\n{preview}")
+                        except Exception:
+                            pass
+
+                detail.update("\n".join(lines))
 
         except Exception as exc:
             detail.update(f"[red]Error loading scan: {exc}[/red]")

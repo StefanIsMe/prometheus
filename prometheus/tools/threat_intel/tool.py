@@ -11,6 +11,7 @@ from typing import Any
 
 from agents import RunContextWrapper, function_tool
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,9 +56,10 @@ async def warm_threat_intel() -> dict[str, Any]:
     Returns:
         Summary dict with counts and status.
     """
-    import httpx
-    import os
     import glob as glob_mod
+    import os
+
+    import httpx
 
     result: dict[str, Any] = {
         "cisa_kev": {"status": "skipped", "count": 0},
@@ -78,7 +80,7 @@ async def warm_threat_intel() -> dict[str, Any]:
         logger.warning("Threat intel warm: CISA KEV failed: %s", exc)
 
     # GHSA pre-cache from daily feed download
-    feed_dir = "/tmp/prometheus-threat-intel"
+    feed_dir = "/mnt/hdd/prometheus-data/threat-intel"
     ghsa_files = sorted(glob_mod.glob(os.path.join(feed_dir, "ghsa-*.json")))
     if ghsa_files:
         ghsa_count = 0
@@ -89,6 +91,7 @@ async def warm_threat_intel() -> dict[str, Any]:
                 if isinstance(data, list):
                     ghsa_count += len(data)
             except Exception:
+                logger.debug("Failed to load GHSA cache file %s", fpath, exc_info=True)
                 continue
         result["ghsa_cache"] = {
             "status": "ok",
@@ -138,6 +141,22 @@ _ECOSYSTEM_MAP: dict[str, str] = {
     "swift": "SwiftURL",
     "cocoapods": "CocoaPods",
     "pub": "crates.io",
+    # Infrastructure / proxy / CDN (no package ecosystem — use GHSA keyword search)
+    "cloudflare": "npm",  # workers-sdk is on npm
+    "vercel": "npm",  # next.js ecosystem
+    "envoy": "Go",  # envoyproxy is Go-based
+    "nginx": "Go",  # no direct ecosystem, but GHSA REST fallback covers it
+    "apache": "Maven",
+    "redis": "Go",
+    "postgresql": "Go",
+    "mysql": "Maven",
+    "elasticsearch": "Maven",
+    "kubernetes": "Go",
+    "docker": "Go",
+    "istio": "Go",
+    "consul": "Go",
+    "vault": "Go",
+    "terraform": "Go",
 }
 
 
@@ -434,7 +453,7 @@ async def _query_ghsa(
 
     # --- Strategy 1: GraphQL per-package query ---
     if ecosystem:
-        graphql_ecosystem = ecosystem.upper()
+
         # Map common variations
         eco_map = {"npm": "NPM", "pypi": "PIP", "go": "GO", "maven": "MAVEN",
                    "nuget": "NUGET", "rubygems": "RUBYGEMS", "crates.io": "RUST",
@@ -703,6 +722,8 @@ def _score_vulnerability(
     - HIGH severity: +20
     - CVSS >= 9.0: +10
     - Has nuclei template: +25
+    - Version match confirmed vulnerable: +5 (SCA confidence boost)
+    - Version match confirmed not_affected: -5 (SCA penalty, still included)
     """
     score = 0
 
@@ -725,6 +746,13 @@ def _score_vulnerability(
 
     if has_nuclei_template:
         score += 25
+
+    # SCA version-match confidence adjustment (ACM SCA paper findings)
+    version_match = (vuln.get("version_match") or "").lower()
+    if version_match == "vulnerable":
+        score += 5   # confirmed match — boost priority
+    elif version_match == "not_affected":
+        score -= 5   # still include, but lower priority
 
     return score
 
@@ -769,35 +797,75 @@ def _deduplicate(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 async def _query_threat_feeds_impl(
     technologies: list[dict[str, str]],
+    *,
+    local_only: bool = True,
 ) -> dict[str, Any]:
-    """Core implementation: query all feeds in parallel and score results."""
+    """Core implementation: local DB first, online fallback only if explicitly enabled.
+
+    local_only=True (default): Uses SQLite local DB + CISA KEV cache only.
+    No network calls to NVD/OSV/GHSA — zero API cost, instant results.
+
+    local_only=False: Also queries online sources (NVD, OSV, GHSA) for
+    fingerprints not found locally. Use for one-off research, not during scans.
+    """
     if not technologies:
         return {
             "success": False,
             "error": "No technologies provided. Pass a list of {technology, version} objects.",
         }
 
-    # Check scan cache first
-    cache_keys = [_fingerprint_key(fp) for fp in technologies]
-    all_cached = all(k in _scan_cache for k in cache_keys)
-    if all_cached:
-        logger.info("All %d fingerprints found in scan cache", len(technologies))
-        cached_results = [_scan_cache[k] for k in cache_keys]
-        return {
-            "success": True,
-            "cached": True,
-            "technologies_queried": len(technologies),
-            "total_vulnerabilities": sum(r.get("total_vulnerabilities", 0) for r in cached_results),
-            "results": cached_results,
-        }
+    from prometheus.tools.threat_intel.query_engine import query_threats as _query_threats_local
+
+    # Phase 1: Query local SQLite DB (fast, free, offline)
+    local_result = await _query_threats_local(technologies)
+    local_hits = local_result.get("local_hits", 0)
+    total_fingerprints = len(technologies)
+    local_misses = total_fingerprints - local_hits
+
+    # Phase 2: Online fallback — only if explicitly requested AND local DB missed something
+    if not local_only and local_misses > 0:
+        logger.info(
+            "Local DB: %d/%d hits. %d misses — falling back to online sources.",
+            local_hits, total_fingerprints, local_misses,
+        )
+        # Only query online for the fingerprints that missed locally
+        missed_fingerprints: list[dict[str, str]] = []
+        for r in local_result.get("results", []):
+            if r.get("total_vulnerabilities", 0) == 0:
+                tech = r.get("technology", "")
+                ver = r.get("version", "")
+                if tech:
+                    missed_fingerprints.append({"technology": tech, "version": ver})
+        if missed_fingerprints:
+            online_result = await _query_threat_feeds_online(missed_fingerprints)
+            # Merge online results into local results
+            if online_result.get("success"):
+                online_by_tech = {r["technology"]: r for r in online_result.get("results", [])}
+                results = local_result.get("results", [])
+                for i, r in enumerate(results):
+                    tech = r.get("technology", "")
+                    if tech in online_by_tech and r.get("total_vulnerabilities", 0) == 0:
+                        results[i] = online_by_tech[tech]
+                local_result["results"] = results
+                local_result["online_fallbacks"] = len(online_by_tech)
+
+    return local_result
+
+
+async def _query_threat_feeds_online(
+    technologies: list[dict[str, str]],
+) -> dict[str, Any]:
+    """Online-only query path — hits NVD, OSV, GHSA, CIRCL, VulnerableCode, npm.
+
+    Only used when local_only=False and local DB misses fingerprints.
+    """
+    if not technologies:
+        return {"success": False, "error": "No technologies provided"}
 
     try:
         import httpx
     except ImportError:
-        return {
-            "success": False,
-            "error": "httpx is not installed. Run: pip install httpx",
-        }
+        return {"success": False, "error": "httpx not installed"}
 
     # Build headers with GitHub token if available
     headers = {"User-Agent": "Mozilla/5.0 (compatible; security-research)"}
@@ -848,20 +916,32 @@ async def _query_threat_feeds_impl(
             cisa_matches = _search_cisa_kev(kev_entries, tech)
             all_cisa_ids = kev_cve_ids | cisa_matches
 
-            # Run NVD, OSV, and GHSA queries in parallel
+            # Run NVD, OSV, GHSA, CIRCL, VulnerableCode, npm advisory in parallel (7 sources)
+            from prometheus.tools.threat_intel.query_engine import (
+                _query_circl,
+                _query_npm_advisory,
+                _query_vulnerablecode,
+            )
             nvd_task = _query_nvd(client, tech, version)
             osv_task = _query_osv(client, tech, version)
             ghsa_task = _query_ghsa(client, tech, version)
-            nvd_results, osv_results, ghsa_results = await asyncio.gather(
-                nvd_task, osv_task, ghsa_task, return_exceptions=True
+            circl_task = _query_circl(client, tech, version)
+            vc_task = _query_vulnerablecode(client, tech, version)
+            npm_task = _query_npm_advisory(client, tech, version)
+            results_all = await asyncio.gather(
+                nvd_task, osv_task, ghsa_task, circl_task, vc_task, npm_task,
+                return_exceptions=True,
             )
 
-            nvd = nvd_results if isinstance(nvd_results, list) else []
-            osv = osv_results if isinstance(osv_results, list) else []
-            ghsa = ghsa_results if isinstance(ghsa_results, list) else []
+            nvd = results_all[0] if isinstance(results_all[0], list) else []
+            osv = results_all[1] if isinstance(results_all[1], list) else []
+            ghsa = results_all[2] if isinstance(results_all[2], list) else []
+            circl = results_all[3] if isinstance(results_all[3], list) else []
+            vc = results_all[4] if isinstance(results_all[4], list) else []
+            npm = results_all[5] if isinstance(results_all[5], list) else []
 
             # Merge and deduplicate
-            all_results = _deduplicate(nvd + osv + ghsa)
+            all_results = _deduplicate(nvd + osv + ghsa + circl + vc + npm)
 
             # Score each vulnerability
             for vuln in all_results:
@@ -935,6 +1015,17 @@ async def query_threat_feeds(
     - HIGH severity: +20
     - CVSS score >= 9.0: +10
     - Has nuclei template: +25
+    - Version match confirmed vulnerable: +5
+    - Version match confirmed not_affected: -5 (still included)
+
+    SCA Confidence Flagging (ACM SCA paper findings):
+    Each result includes an 'sca_confidence' field:
+    - 'high': ecosystem matched, version range confirmed vulnerable
+    - 'medium': ecosystem matched but version range unknown/unconfirmed
+    - 'low': no ecosystem mapping, keyword match only
+
+    Version-range matching is unreliable across databases (NVD, GHSA, OSV).
+    Low-confidence results are flagged for manual verification.
 
     Use this tool AFTER fingerprinting the target's technology stack
     and BEFORE starting vulnerability testing. The prioritized CVE

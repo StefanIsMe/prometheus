@@ -309,6 +309,7 @@ async def create_todo(ctx: RunContextWrapper, todos: str) -> str:
             {"title": "Check JWT alg=none"}]``.
     """
     agent_id = _agent_id_from(ctx)
+    logger.debug("create_todo: agent=%s todos_len=%d", agent_id, len(todos) if todos else 0)
     try:
         tasks = _normalize_bulk_todos(todos)
         if not tasks:
@@ -342,6 +343,7 @@ async def create_todo(ctx: RunContextWrapper, todos: str) -> str:
         )
 
     _persist()
+    logger.debug("create_todo: agent=%s created=%d total=%d", agent_id, len(created), len(_get_agent_todos(agent_id)))
     return json.dumps(
         {
             "success": True,
@@ -600,3 +602,45 @@ async def delete_todo(ctx: RunContextWrapper, todo_ids: str) -> str:
     if errors:
         response["errors"] = errors
     return json.dumps(response, ensure_ascii=False, default=str)
+
+
+# --- SDK-name aliases ---------------------------------------------------------
+# OpenAI Agents SDK ships built-in todo tools named ``mark_todo_in_progress``
+# and ``mark_todo_completed``. Models trained on the SDK (and third-party
+# providers that proxy OpenAI Chat-Completions) sometimes emit these names
+# verbatim, which raises ``ModelBehaviorError: Tool ... not found in agent``
+# because Prometheus's actual todo tools are ``mark_todo_done`` and
+# ``mark_todo_pending``. These aliases accept the SDK's expected names and
+# delegate to the same backing store so the agent can finish a turn cleanly.
+# DO NOT remove these without first confirming that the active model never
+# emits the SDK tool names.
+
+
+@function_tool(timeout=30)
+async def mark_todo_in_progress(ctx: RunContextWrapper, todo_ids: str) -> str:
+    """Mark one or many todos as in_progress (OpenAI Agents SDK alias).
+
+    Mirrors ``mark_todo_pending``-style behavior but sets status to
+    ``in_progress`` instead. Exists so models that emit the OpenAI Agents
+    SDK's standard tool name do not crash the agent loop.
+
+    Args:
+        todo_ids: JSON array of todo IDs to mark in_progress. For one
+            todo, pass a one-item list.
+    """
+    return _mark(agent_id=_agent_id_from(ctx), todo_ids=todo_ids, new_status="in_progress")
+
+
+@function_tool(timeout=30)
+async def mark_todo_completed(ctx: RunContextWrapper, todo_ids: str) -> str:
+    """Mark one or many todos as completed (OpenAI Agents SDK alias).
+
+    Equivalent to ``mark_todo_done`` under Prometheus's status vocabulary.
+    Exists so models that emit the OpenAI Agents SDK's standard tool name
+    do not crash the agent loop.
+
+    Args:
+        todo_ids: JSON array of todo IDs to mark completed. For one
+            todo, pass a one-item list.
+    """
+    return _mark(agent_id=_agent_id_from(ctx), todo_ids=todo_ids, new_status="done")

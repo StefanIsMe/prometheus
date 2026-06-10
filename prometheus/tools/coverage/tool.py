@@ -21,6 +21,7 @@ from typing import Any
 
 from agents import RunContextWrapper, function_tool
 
+
 logger = logging.getLogger(__name__)
 
 # ── constants ───────────────────────────────────────────────────────────────
@@ -48,6 +49,11 @@ class CoverageEntry:
     Attributes:
         endpoint: The URL or API path being tested.
         vuln_type: The vulnerability class (sqli, xss, idor, …).
+        method: HTTP method when known.
+        parameter: Specific parameter/body field/header under test.
+        role: Account role or privilege level used for the test.
+        auth_state: Authentication state used for the test.
+        workflow_step: Business workflow step under test.
         status: One of ``untested``, ``testing``, ``tested_clean``,
             ``tested_vulnerable``, ``skipped``.
         agent_id: Which agent last updated this cell.
@@ -58,6 +64,11 @@ class CoverageEntry:
 
     endpoint: str
     vuln_type: str
+    method: str = ""
+    parameter: str = ""
+    role: str = ""
+    auth_state: str = ""
+    workflow_step: str = ""
     status: str = "untested"
     agent_id: str = ""
     notes: str = ""
@@ -70,7 +81,8 @@ class CoverageEntry:
 class CoverageTracker:
     """In-memory coverage matrix with JSON persistence.
 
-    The matrix is keyed by ``(endpoint, vuln_type)`` tuples.  Mutations
+    The matrix is keyed by endpoint, method, parameter, role, auth state,
+    workflow step, and vulnerability type.  Mutations
     are *not* auto-persisted — call :meth:`persist` explicitly (or use
     the module-level helpers which do it for you).
 
@@ -81,7 +93,7 @@ class CoverageTracker:
     def __init__(self, state_dir: Path) -> None:
         self._state_dir = state_dir
         self._path = state_dir / "coverage.json"
-        self._entries: dict[tuple[str, str], CoverageEntry] = {}
+        self._entries: dict[tuple[str, str, str, str, str, str, str], CoverageEntry] = {}
 
     # ── registration ────────────────────────────────────────────────────
 
@@ -94,7 +106,7 @@ class CoverageTracker:
         """
         vuln_types = {e.vuln_type for e in self._entries.values()}
         for vt in vuln_types:
-            key = (endpoint, vt)
+            key = self._key(endpoint, vt)
             if key not in self._entries:
                 self._entries[key] = CoverageEntry(endpoint=endpoint, vuln_type=vt)
 
@@ -105,6 +117,11 @@ class CoverageTracker:
         status: str,
         agent_id: str = "",
         notes: str = "",
+        method: str = "",
+        parameter: str = "",
+        role: str = "",
+        auth_state: str = "",
+        workflow_step: str = "",
     ) -> None:
         """Record a test result for *(endpoint, vuln_type)*.
 
@@ -123,11 +140,16 @@ class CoverageTracker:
             raise ValueError(
                 f"Invalid status '{status}'. Must be one of: {', '.join(VALID_STATUSES)}"
             )
-        key = (endpoint, vuln_type)
+        key = self._key(endpoint, vuln_type, method, parameter, role, auth_state, workflow_step)
         existing = self._entries.get(key)
         self._entries[key] = CoverageEntry(
             endpoint=endpoint,
             vuln_type=vuln_type,
+            method=method.upper() if method else (existing.method if existing else ""),
+            parameter=parameter or (existing.parameter if existing else ""),
+            role=role or (existing.role if existing else ""),
+            auth_state=auth_state or (existing.auth_state if existing else ""),
+            workflow_step=workflow_step or (existing.workflow_step if existing else ""),
             status=status,
             agent_id=agent_id or (existing.agent_id if existing else ""),
             notes=notes or (existing.notes if existing else ""),
@@ -154,9 +176,17 @@ class CoverageTracker:
         }
 
     def get_untested(self) -> list[dict[str, str]]:
-        """Return a list of ``{endpoint, vuln_type}`` pairs not yet tested."""
+        """Return untested endpoint/input/role/workflow cells."""
         return [
-            {"endpoint": e.endpoint, "vuln_type": e.vuln_type}
+            {
+                "endpoint": e.endpoint,
+                "vuln_type": e.vuln_type,
+                "method": e.method,
+                "parameter": e.parameter,
+                "role": e.role,
+                "auth_state": e.auth_state,
+                "workflow_step": e.workflow_step,
+            }
             for e in self._entries.values()
             if e.status in ("untested", "testing")
         ]
@@ -230,9 +260,19 @@ class CoverageTracker:
             vt = item.get("vuln_type", "")
             if not ep or not vt:
                 continue
-            self._entries[(ep, vt)] = CoverageEntry(
+            method = str(item.get("method", ""))
+            parameter = str(item.get("parameter", ""))
+            role = str(item.get("role", ""))
+            auth_state = str(item.get("auth_state", ""))
+            workflow_step = str(item.get("workflow_step", ""))
+            self._entries[self._key(ep, vt, method, parameter, role, auth_state, workflow_step)] = CoverageEntry(
                 endpoint=ep,
                 vuln_type=vt,
+                method=method,
+                parameter=parameter,
+                role=role,
+                auth_state=auth_state,
+                workflow_step=workflow_step,
                 status=item.get("status", "untested"),
                 agent_id=item.get("agent_id", ""),
                 notes=item.get("notes", ""),
@@ -248,9 +288,29 @@ class CoverageTracker:
 
     def ensure_cell(self, endpoint: str, vuln_type: str) -> None:
         """Add a cell with ``status='untested'`` if it doesn't already exist."""
-        key = (endpoint, vuln_type)
+        key = self._key(endpoint, vuln_type)
         if key not in self._entries:
             self._entries[key] = CoverageEntry(endpoint=endpoint, vuln_type=vuln_type)
+
+    @staticmethod
+    def _key(
+        endpoint: str,
+        vuln_type: str,
+        method: str = "",
+        parameter: str = "",
+        role: str = "",
+        auth_state: str = "",
+        workflow_step: str = "",
+    ) -> tuple[str, str, str, str, str, str, str]:
+        return (
+            endpoint,
+            vuln_type,
+            method.upper() if method else "",
+            parameter,
+            role,
+            auth_state,
+            workflow_step,
+        )
 
     def all_entries(self) -> list[dict[str, Any]]:
         """Return every cell as a list of dicts."""
@@ -336,6 +396,11 @@ async def register_coverage(
     vuln_type: str,
     status: str,
     notes: str = "",
+    method: str = "",
+    parameter: str = "",
+    role: str = "",
+    auth_state: str = "",
+    workflow_step: str = "",
 ) -> str:
     """Record a test result for an endpoint × vuln_type pair.
 
@@ -351,10 +416,22 @@ async def register_coverage(
         notes: Optional free-form notes (payloads tried, WAF notes, etc.).
     """
     agent_id = _agent_id_from(ctx)
+    logger.debug("register_coverage: endpoint=%s vuln_type=%s status=%s agent=%s", endpoint, vuln_type, status, agent_id)
     try:
         tracker = _get_tracker()
         with _tracker_lock:
-            tracker.register_test(endpoint, vuln_type, status, agent_id, notes)
+            tracker.register_test(
+                endpoint,
+                vuln_type,
+                status,
+                agent_id,
+                notes,
+                method=method,
+                parameter=parameter,
+                role=role,
+                auth_state=auth_state,
+                workflow_step=workflow_step,
+            )
             tracker.persist()
         return json.dumps(
             {
@@ -368,6 +445,7 @@ async def register_coverage(
             default=str,
         )
     except Exception as exc:
+        logger.warning("register_coverage failed: endpoint=%s vuln_type=%s", endpoint, vuln_type, exc_info=True)
         return json.dumps(
             {"success": False, "error": str(exc)},
             ensure_ascii=False,
@@ -383,6 +461,7 @@ async def get_coverage_summary(ctx: RunContextWrapper) -> str:
     the completion percentage.  Also includes per-endpoint and per-vuln-type
     breakdowns.
     """
+    logger.debug("get_coverage_summary called")
     try:
         tracker = _get_tracker()
         with _tracker_lock:
@@ -406,6 +485,7 @@ async def get_coverage_summary(ctx: RunContextWrapper) -> str:
             default=str,
         )
     except Exception as exc:
+        logger.warning("get_coverage_summary failed", exc_info=True)
         return json.dumps(
             {"success": False, "error": str(exc)},
             ensure_ascii=False,
@@ -420,6 +500,7 @@ async def get_untested_areas(ctx: RunContextWrapper) -> str:
     Use this to discover what still needs work — each entry has
     ``endpoint`` and ``vuln_type`` keys.
     """
+    logger.debug("get_untested_areas called")
     try:
         tracker = _get_tracker()
         with _tracker_lock:
@@ -434,6 +515,7 @@ async def get_untested_areas(ctx: RunContextWrapper) -> str:
             default=str,
         )
     except Exception as exc:
+        logger.warning("get_untested_areas failed", exc_info=True)
         return json.dumps(
             {"success": False, "error": str(exc)},
             ensure_ascii=False,

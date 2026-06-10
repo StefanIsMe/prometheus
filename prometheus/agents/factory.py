@@ -16,8 +16,8 @@ from agents.tool import CustomTool, FunctionTool, Tool
 from pydantic import ValidationError
 
 from prometheus.agents.prompt import render_system_prompt
-from prometheus.core.rate_limiter import maybe_rate_limit
 from prometheus.core.comms import get_active_run, read_control, write_status
+from prometheus.core.rate_limiter import maybe_rate_limit
 from prometheus.tools.agents_graph.tools import (
     agent_finish,
     create_agent,
@@ -26,7 +26,51 @@ from prometheus.tools.agents_graph.tools import (
     view_agent_graph,
     wait_for_message,
 )
+from prometheus.tools.attack_surface.tool import (
+    get_attack_surface_summary,
+    register_attack_surface_edge,
+    register_attack_surface_node,
+    suggest_workflow_mutations,
+)
+from prometheus.tools.context_paging import list_evicted_content, retrieve_evicted_content
+from prometheus.tools.coverage.tool import (
+    get_coverage_summary,
+    get_untested_areas,
+    register_coverage,
+)
+from prometheus.tools.cross_target.tool import get_cross_target_suggestions, get_tech_overlap
+from prometheus.tools.deep_audit.tool import (
+    build_bugcrowd_submission,
+    generate_verified_poc,
+    get_auth_flow_trace_script,
+    get_deep_audit_plan,
+    lookup_bugcrowd_vrt,
+    run_differential_analysis,
+)
 from prometheus.tools.finish.tool import finish_scan
+from prometheus.tools.hypotheses.tool import (
+    check_hypothesis_report_gate,
+    create_hypothesis,
+    get_hypothesis_portfolio,
+    get_reusable_trajectories,
+    mark_hypothesis_status,
+    record_hypothesis_evidence,
+    score_hypothesis,
+    select_next_hypothesis,
+)
+from prometheus.tools.knowledge.tool import (
+    get_findings_summary,
+    get_ready_to_submit,
+    get_report_details,
+    get_target_profile,
+    list_reports,
+    list_target_profiles,
+    query_knowledge,
+    revalidate_findings,
+    save_knowledge,
+    search_knowledge,
+    update_report_status,
+)
 from prometheus.tools.load_skill.tool import load_skill
 from prometheus.tools.notes.tools import (
     create_note,
@@ -43,52 +87,40 @@ from prometheus.tools.proxy.tools import (
     view_request,
     view_sitemap_entry,
 )
+from prometheus.tools.ptg.tool import get_active_ptg, get_scan_progress, init_ptg
 from prometheus.tools.reporting.tool import create_vulnerability_report
+from prometheus.tools.scheduler.tool import (
+    get_schedule,
+    pause_schedule,
+    resume_schedule,
+    set_schedule,
+)
+from prometheus.tools.skill_learn.tool import (
+    create_custom_skill,
+    list_custom_skills,
+    suggest_skill_update,
+    update_custom_skill,
+)
+from prometheus.tools.target_registry.tool import (
+    add_target,
+    get_target,
+    list_targets,
+    remove_target,
+    update_target,
+)
 from prometheus.tools.thinking.tool import think
+from prometheus.tools.threat_intel.tool import query_threat_feeds
 from prometheus.tools.todo.tools import (
     create_todo,
     delete_todo,
     list_todos,
+    mark_todo_completed,
     mark_todo_done,
+    mark_todo_in_progress,
     mark_todo_pending,
     update_todo,
 )
 from prometheus.tools.web_search.tool import web_search
-from prometheus.tools.threat_intel.tool import query_threat_feeds
-from prometheus.tools.knowledge.tool import (
-    save_knowledge,
-    query_knowledge,
-    search_knowledge,
-    get_target_profile,
-    list_target_profiles,
-    update_report_status,
-    get_report_details,
-    list_reports,
-    get_findings_summary,
-    get_ready_to_submit,
-    revalidate_findings,
-)
-from prometheus.tools.skill_learn.tool import (
-    create_custom_skill,
-    update_custom_skill,
-    list_custom_skills,
-    suggest_skill_update,
-)
-from prometheus.tools.coverage.tool import register_coverage, get_coverage_summary, get_untested_areas
-from prometheus.tools.target_registry.tool import (
-    add_target,
-    remove_target,
-    list_targets,
-    update_target,
-    get_target,
-)
-from prometheus.tools.cross_target.tool import get_cross_target_suggestions, get_tech_overlap
-from prometheus.tools.scheduler.tool import (
-    get_schedule,
-    set_schedule,
-    pause_schedule,
-    resume_schedule,
-)
 
 
 if TYPE_CHECKING:
@@ -107,19 +139,20 @@ _CUSTOM_TOOL_INPUT_FIELD_BY_NAME = {
 _DEFAULT_CUSTOM_TOOL_INPUT_FIELD = "input"
 
 # --- Research gate: track mandatory pre-scan tool calls ---
-# Only applies to root agent. Blocks finish_scan until both web_search
-# and query_threat_feeds have been called at least once.
+# Only applies to root agent. Blocks finish_scan until query_threat_feeds
+# has been called at least once (uses local DB — no LLM cost).
+# web_search is OPTIONAL — no minimum enforced. Use local threat intel DB first.
 _research_gate_enabled = False
 _research_calls: set[str] = set()
-_RESEARCH_REQUIRED_TOOLS = {"web_search", "query_threat_feeds"}
+_RESEARCH_REQUIRED_TOOLS = {"query_threat_feeds"}
 
-# Per-technology CVE research gate: tracks how many technologies were
-# passed to query_threat_feeds and requires at least that many web_search
-# calls (capped at _MAX_TECH_RESEARCH) before allowing finish_scan.
+# Per-technology CVE research gate: DISABLED — local DB covers this.
+# Previously forced 100-999 web_search calls per scan (huge LLM token cost).
 _technologies_queried = 0
 _web_search_count = 0
-_MAX_TECH_RESEARCH = 5
+_MAX_TECH_RESEARCH = 0  # Disabled — local threat intel DB is the source of truth
 _PER_TECH_GATE_ENABLED = False
+_MIN_WEB_SEARCHES_BEFORE_FINISH = 0  # Disabled — no minimum web_search calls required
 
 # Nuclei gate: blocks finish_scan until nuclei has been run at least once
 _nuclei_gate_enabled = False
@@ -133,7 +166,8 @@ def _enable_research_gate() -> None:
     global _fingerprint_gate_enabled, _fingerprint_done
     _research_gate_enabled = True
     _research_calls = set()
-    _PER_TECH_GATE_ENABLED = True
+    # Per-tech web_search gate DISABLED — local threat intel DB handles CVE research
+    _PER_TECH_GATE_ENABLED = False
     _technologies_queried = 0
     _web_search_count = 0
     _tor_gate_enabled = True
@@ -183,12 +217,14 @@ def _per_tech_research_complete() -> bool:
 # --- Tor verification gate ---
 _tor_gate_enabled = False
 _tor_verified = False
+_tor_ever_used = False  # Set True only when a command actually routes through Tor
 
 
 def _enable_tor_gate() -> None:
-    global _tor_gate_enabled, _tor_verified
+    global _tor_gate_enabled, _tor_verified, _tor_ever_used
     _tor_gate_enabled = True
     _tor_verified = False
+    _tor_ever_used = False
 
 
 def _record_tor_check(cmd: str, output: str = "") -> None:
@@ -213,6 +249,20 @@ def _record_tor_check(cmd: str, output: str = "") -> None:
             "Tor verification FAILED — command ran but IsTor:true not in output. "
             "Output was: %s", (output or "(empty)")[:200]
         )
+
+
+def _maybe_mark_tor_used(cmd: str) -> None:
+    """Mark that Tor was used if any network tool has a Tor proxy flag."""
+    global _tor_ever_used
+    if _tor_ever_used:
+        return
+    cmd_stripped = cmd.strip()
+    for tool_name, proxy_flags in _TOR_PROXY_FLAGS.items():
+        tool_pattern = r"(?:^|[;&|]\s*)" + re.escape(tool_name) + r"(?:\s|$)"
+        if re.search(tool_pattern, cmd_stripped.lower()):
+            if any(flag in cmd_stripped for flag in proxy_flags):
+                _tor_ever_used = True
+                return
 
 
 # --- Tor proxy enforcement for individual commands ---
@@ -245,9 +295,22 @@ def _check_tor_proxy_required(cmd: str) -> str | None:
     """Check if a network command has explicit Tor proxy flags.
 
     Returns an error string if the command is blocked, or None if allowed.
+
+    Commands containing ``#tor-bypass#`` skip Tor enforcement entirely.
+    This is for Phase 2: direct connections to targets known to reject Tor.
+    The agent MUST only use this after saving tor_status knowledge for the
+    target (via save_knowledge with category=tor_status, key=tor_rejected).
     """
     if not _tor_gate_enabled:
         return None
+
+    # --- Tor bypass: agent signals this is a Phase 2 direct connection ---
+    if "#tor-bypass#" in cmd:
+        logger.info(
+            "Tor BYPASS requested for command: %s",
+            cmd.replace("#tor-bypass#", "").strip()[:200],
+        )
+        return None  # Skip all Tor enforcement
 
     cmd_stripped = cmd.strip()
     cmd_lower = cmd_stripped.lower()
@@ -265,7 +328,7 @@ def _check_tor_proxy_required(cmd: str) -> str | None:
     for tool_name, proxy_flags in _TOR_PROXY_FLAGS.items():
         # Match tool at start of command or after pipe/chain
         # Handles: "curl ...", "| curl ...", "&& curl ...", "; curl ..."
-        tool_pattern = r'(?:^|[;&|]\s*)' + re.escape(tool_name) + r'(?:\s|$)'
+        tool_pattern = r"(?:^|[;&|]\s*)" + re.escape(tool_name) + r"(?:\s|$)"
         if not re.search(tool_pattern, cmd_lower):
             continue
 
@@ -277,7 +340,11 @@ def _check_tor_proxy_required(cmd: str) -> str | None:
                 f"Add one of: {', '.join(sorted(proxy_flags))} socks5://host.docker.internal:9050\n"
                 f"Example for curl: curl --proxy socks5h://host.docker.internal:9050 <url>\n"
                 f"Example for nuclei: nuclei -u <target> -proxy socks5://host.docker.internal:9050\n"
-                f"ALL traffic MUST go through Tor. No exceptions."
+                f"Traffic should go through Tor when available.\n"
+                f"DIRECT CONNECTION FALLBACK: If Tor is unavailable OR this target REJECTS Tor, "
+                f"prepend #tor-bypass# to your command AND add "
+                f"--noproxy '*' (curl) or equivalent to bypass env var proxy. "
+                f"Example: #tor-bypass# curl --noproxy '*' -s <url>"
             )
 
     return None
@@ -460,6 +527,10 @@ def _wrap_exec_command(tool: FunctionTool) -> FunctionTool:
             _record_nuclei_run(cmd)
             # Track fingerprinting tools
             _record_fingerprinting(cmd)
+            # Track PTG phase progression
+            ptg = get_active_ptg()
+            if ptg:
+                ptg.record_tool_call("exec_command", cmd)
             # Track Tor verification — MOVED to after execution so we can check output
             # _record_tor_check(cmd)  # OLD: marked verified just from seeing the command
 
@@ -470,6 +541,9 @@ def _wrap_exec_command(tool: FunctionTool) -> FunctionTool:
             if tor_block:
                 logger.warning("Tor proxy enforcement blocked command: %s", cmd[:200])
                 return tor_block
+            # Track that Tor was used (any tool with proxy flag)
+            if _tor_gate_enabled and not _tor_ever_used:
+                _maybe_mark_tor_used(cmd)
             # --- End Tor proxy enforcement ---
 
             # Defense-in-depth: detect agent trying to run query_threat_feeds as a shell command
@@ -609,6 +683,55 @@ def _wrap_query_threat_feeds_tool(tool: FunctionTool) -> FunctionTool:
 
         # Also record as a research call
         _record_research_call(tool.name)
+        # Track PTG phase progression
+        ptg = get_active_ptg()
+        if ptg:
+            ptg.record_tool_call(tool.name)
+        return await invoke_tool(ctx, raw_input)
+
+    tool.on_invoke_tool = invoke
+    return tool
+
+
+def _wrap_reporting_tool(tool: FunctionTool) -> FunctionTool:
+    """Wrap create_vulnerability_report to track PTG phase progression."""
+    invoke_tool = tool.on_invoke_tool
+
+    async def invoke(ctx: Any, raw_input: str) -> Any:
+        ptg = get_active_ptg()
+        if ptg:
+            ptg.record_tool_call(tool.name)
+        return await invoke_tool(ctx, raw_input)
+
+    tool.on_invoke_tool = invoke
+    return tool
+
+
+def _wrap_create_agent_tool(tool: FunctionTool) -> FunctionTool:
+    """Wrap create_agent to track PTG phases for root agents.
+
+    When the root agent spawns a subagent, the skills passed indicate
+    which PTG phase is being delegated.  The parent PTG cannot observe
+    tool calls inside child agents, so we auto-complete phases based on
+    the skills the child is configured with.
+    """
+    invoke_tool = tool.on_invoke_tool
+
+    async def invoke(ctx: Any, raw_input: str) -> Any:
+        ptg = get_active_ptg()
+        if ptg:
+            ptg.record_tool_call(tool.name)
+            # Extract skills from the raw JSON input to auto-advance PTG phases
+            try:
+                import json as _json
+                args = _json.loads(raw_input)
+                skills = args.get("skills", [])
+                if isinstance(skills, str):
+                    skills = [skills]
+                if skills and hasattr(ptg, "mark_phase_complete_by_skill_delegation"):
+                    ptg.mark_phase_complete_by_skill_delegation(skills)
+            except Exception:
+                pass  # Best-effort; raw_input may not be parseable JSON
         return await invoke_tool(ctx, raw_input)
 
     tool.on_invoke_tool = invoke
@@ -642,6 +765,7 @@ def _finish_tool_use_behavior(
                 _tor_gate_enabled
                 and tool_result.tool.name == "finish_scan"
                 and not _tor_verified
+                and _tor_ever_used  # Only block if Tor was actually used
             ):
                 logger.info("Tor gate: Tor verification not confirmed")
                 return ToolsToFinalOutputResult(
@@ -694,7 +818,27 @@ def _finish_tool_use_behavior(
                     final_output=f"GATE BLOCKED: Per-technology CVE research incomplete. "
                     f"You've done {_web_search_count}/{required} web_search calls "
                     f"for {_technologies_queried} fingerprinted technologies. "
-                    f"Search for CVEs for each technology before finishing.",
+                    f"Search for CVEs for EACH technology before finishing. "
+                    f"Query threat feeds for ALL technologies. Do NOT skip any.",
+                )
+            # Minimum web_search count gate - Stefan wants exhaustive research
+            if (
+                _PER_TECH_GATE_ENABLED
+                and tool_result.tool.name == "finish_scan"
+                and _web_search_count < _MIN_WEB_SEARCHES_BEFORE_FINISH
+            ):
+                logger.info(
+                    "Minimum web_search gate: %d/%d web_search calls",
+                    _web_search_count, _MIN_WEB_SEARCHES_BEFORE_FINISH,
+                )
+                return ToolsToFinalOutputResult(
+                    is_final_output=False,
+                    final_output=f"GATE BLOCKED: Insufficient research depth. "
+                    f"You've done {_web_search_count}/{_MIN_WEB_SEARCHES_BEFORE_FINISH} web_search calls. "
+                    f"You MUST do at least {_MIN_WEB_SEARCHES_BEFORE_FINISH} web_search calls before finishing. "
+                    f"Keep searching for vulnerabilities, attack vectors, and techniques. "
+                    f"Query threat feeds for EVERY technology. "
+                    f"Do NOT stop until you have exhausted ALL possible approaches.",
                 )
             # Nuclei gate: block finish_scan if nuclei was never run
             if (
@@ -710,6 +854,13 @@ def _finish_tool_use_behavior(
                     "Example: 'nuclei -u https://target.com -proxy socks5://host.docker.internal:9050 "
                     "-severity high,critical -timeout 15 -retries 1 -no-interactsh -rate-limit 5 -c 10'",
                 )
+            # Mark REPORTING phase complete in PTG when finish_scan passes all gates
+            if tool_result.tool.name == "finish_scan":
+                ptg = get_active_ptg()
+                if ptg:
+                    ptg.record_tool_call("finish_scan")
+                    if ptg.phases["REPORTING"].status != "completed":
+                        ptg.mark_phase_complete("REPORTING")
             return ToolsToFinalOutputResult(
                 is_final_output=True,
                 final_output=tool_result.output,
@@ -726,11 +877,14 @@ _BASE_TOOLS: tuple[Tool, ...] = (
     think,
     load_skill,
     query_threat_feeds,
+    get_scan_progress,
     create_todo,
     list_todos,
     update_todo,
     mark_todo_done,
     mark_todo_pending,
+    mark_todo_in_progress,
+    mark_todo_completed,
     delete_todo,
     create_note,
     list_notes,
@@ -765,9 +919,21 @@ _BASE_TOOLS: tuple[Tool, ...] = (
     get_findings_summary,
     get_ready_to_submit,
     revalidate_findings,
+    create_hypothesis,
+    score_hypothesis,
+    select_next_hypothesis,
+    record_hypothesis_evidence,
+    mark_hypothesis_status,
+    get_hypothesis_portfolio,
+    check_hypothesis_report_gate,
+    get_reusable_trajectories,
     register_coverage,
     get_coverage_summary,
     get_untested_areas,
+    register_attack_surface_node,
+    register_attack_surface_edge,
+    get_attack_surface_summary,
+    suggest_workflow_mutations,
     add_target,
     remove_target,
     list_targets,
@@ -779,6 +945,14 @@ _BASE_TOOLS: tuple[Tool, ...] = (
     resume_schedule,
     get_cross_target_suggestions,
     get_tech_overlap,
+    run_differential_analysis,
+    get_auth_flow_trace_script,
+    get_deep_audit_plan,
+    generate_verified_poc,
+    build_bugcrowd_submission,
+    lookup_bugcrowd_vrt,
+    retrieve_evicted_content,
+    list_evicted_content,
 )
 
 
@@ -792,12 +966,17 @@ def build_prometheus_agent(
     interactive: bool = False,
     chat_completions_tools: bool = False,
     system_prompt_context: dict[str, Any] | None = None,
+    prior_knowledge_count: int = 0,
+    pre_scan_fingerprint_done: bool = False,
 ) -> SandboxAgent[Any]:
     """Build a SandboxAgent for either root or child use.
 
     Args:
         chat_completions_tools: Wrap SDK custom tools as function tools
             when the selected backend cannot accept Responses custom tools.
+        prior_knowledge_count: Number of knowledge entries hydrated from
+            previous scans.  Used to auto-complete the RECON PTG phase
+            when prior data already covers the target.
     """
     instructions = render_system_prompt(
         skills=skills,
@@ -806,6 +985,7 @@ def build_prometheus_agent(
         is_root=is_root,
         interactive=interactive,
         system_prompt_context=system_prompt_context,
+        compress=not is_root,  # Phase 3: compress skills for child agents
     )
 
     if is_root:
@@ -819,10 +999,25 @@ def build_prometheus_agent(
         _enable_tor_gate()
         # Enable fingerprint gate — blocks finish_scan until technologies are identified
         _enable_fingerprint_gate()
+        # Initialize Penetration Task Graph — structured phase decomposition
+        ptg = init_ptg()
+        # Auto-complete RECON if prior knowledge already covers this target
+        if prior_knowledge_count > 0:
+            ptg.mark_recon_from_prior_knowledge(prior_knowledge_count)
+        # Auto-complete FINGERPRINT if pre-scan tech detection already ran
+        if pre_scan_fingerprint_done:
+            fp_phase = ptg.phases.get("FINGERPRINT")
+            if fp_phase and fp_phase.status == "in_progress":
+                fp_phase.tools_called.add("exec_command")
+                ptg.mark_phase_complete("FINGERPRINT")
+                logger.info("PTG FINGERPRINT auto-completed from pre-scan httpx -tech-detect")
+        # Inject PTG phase context into system prompt
+        instructions += "\n\n" + ptg.to_prompt_context()
+        logger.info("PTG initialized for root agent")
     else:
         tools = [*_BASE_TOOLS, agent_finish]
 
-    # Wrap research tools to track calls (for research gate)
+    # Wrap research tools to track calls (for research gate + PTG)
     wrapped_tools: list[Tool] = []
     for t in tools:
         if isinstance(t, FunctionTool) and t.name == "query_threat_feeds":
@@ -830,6 +1025,10 @@ def build_prometheus_agent(
             wrapped_tools.append(_wrap_query_threat_feeds_tool(t))
         elif isinstance(t, FunctionTool) and t.name in _RESEARCH_REQUIRED_TOOLS:
             wrapped_tools.append(_wrap_research_tool(t))
+        elif isinstance(t, FunctionTool) and t.name == "create_vulnerability_report":
+            wrapped_tools.append(_wrap_reporting_tool(t))
+        elif isinstance(t, FunctionTool) and t.name == "create_agent":
+            wrapped_tools.append(_wrap_create_agent_tool(t))
         else:
             wrapped_tools.append(t)
     tools = wrapped_tools

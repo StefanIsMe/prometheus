@@ -5,7 +5,7 @@ import os
 import glob
 from datetime import datetime, timedelta
 
-FEED_DIR = "/tmp/prometheus-threat-intel"
+FEED_DIR = "/mnt/hdd/prometheus-data/threat-intel"
 now = datetime.now()
 cutoff_24h = (now - timedelta(hours=24)).isoformat()
 cutoff_7d = (now - timedelta(days=7)).strftime("%Y-%m-%d")

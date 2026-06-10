@@ -13,7 +13,8 @@ import sqlite3
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
+
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +26,11 @@ _VALID_CATEGORIES = frozenset(
         "vulnerability",
         "failed_approach",
         "successful_technique",
+        "tor_status",
     }
 )
 
-_DEFAULT_DB_PATH = Path.home() / ".prometheus" / "knowledge.db"
+_DEFAULT_DB_PATH = Path.home() / ".prometheus" / "prometheus.db"
 
 _instance: KnowledgeStore | None = None
 _instance_lock = threading.Lock()
@@ -41,15 +43,16 @@ class KnowledgeStore:
     guarantees one connection per process.
     """
 
-    def __new__(cls, db_path: Path | str | None = None) -> KnowledgeStore:
+    def __new__(cls, db_path: Path | str | None = None) -> Self:
         global _instance  # noqa: PLW0603
-        if _instance is not None:
+        requested_path = Path(db_path) if db_path else _DEFAULT_DB_PATH
+        if _instance is not None and getattr(_instance, "_db_path", requested_path) == requested_path:
             return _instance
         with _instance_lock:
-            if _instance is not None:
+            if _instance is not None and getattr(_instance, "_db_path", requested_path) == requested_path:
                 return _instance
             inst = super().__new__(cls)
-            inst._init(db_path)  # type: ignore[attr-defined]
+            inst._init(requested_path)  # type: ignore[attr-defined]
             _instance = inst
             return inst
 
@@ -240,6 +243,15 @@ class KnowledgeStore:
                 self._conn.commit()
                 logger.info("Migration: added active_h1_version column to report_status")
 
+        # Canonical Prometheus product schema. Runs after legacy columns exist
+        # so backfills can preserve full_finding_json data.
+        with self._lock:
+            from prometheus.db.migrations import apply_prometheus_migrations
+
+            applied = apply_prometheus_migrations(self._conn)
+            if applied:
+                logger.info("Applied Prometheus DB migrations: %s", applied)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -393,8 +405,7 @@ class KnowledgeStore:
         import re
         d = re.sub(r"^https?://", "", url.strip().lower())
         d = re.sub(r"^www\.", "", d)
-        d = d.split("/")[0].split(":")[0]
-        return d
+        return d.split("/")[0].split(":")[0]
 
     def record_scan_start(
         self,
@@ -671,7 +682,7 @@ class KnowledgeStore:
 
             # Layer 2: CWE + endpoint match
             if cwe and endpoint:
-                cwe_hash = self._cwe_endpoint_hash(cwe, endpoint)
+
                 row = self._conn.execute(
                     "SELECT * FROM report_status WHERE domain = ? AND cwe = ? AND endpoint = ?",
                     (domain, cwe, endpoint),
@@ -790,9 +801,8 @@ class KnowledgeStore:
                 self._conn.execute(sql, params)
                 self._conn.commit()
                 return {"success": True, "id": existing["id"], "action": "updated"}
-            else:
-                cur = self._conn.execute(
-                    """
+            cur = self._conn.execute(
+                """
                     INSERT INTO report_status
                         (domain, scan_id, finding_title, finding_hash, status,
                          severity, cvss, endpoint, cwe, platform, report_url,
@@ -800,14 +810,14 @@ class KnowledgeStore:
                          created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (
-                        domain, scan_id, finding_title, finding_hash, status,
-                        severity, cvss, endpoint, cwe, platform, report_url,
-                        h1_report_id, notes, full_finding_json, submitted_at, resolved_at, now, now,
-                    ),
-                )
-                self._conn.commit()
-                return {"success": True, "id": cur.lastrowid, "action": "created"}
+                (
+                    domain, scan_id, finding_title, finding_hash, status,
+                    severity, cvss, endpoint, cwe, platform, report_url,
+                    h1_report_id, notes, full_finding_json, submitted_at, resolved_at, now, now,
+                ),
+            )
+            self._conn.commit()
+            return {"success": True, "id": cur.lastrowid, "action": "created"}
 
     def get_report(
         self,
@@ -843,18 +853,26 @@ class KnowledgeStore:
 
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = f"""
-            SELECT * FROM report_status {where}
+            SELECT rs.*, COALESCE(fc.lifecycle_status, rs.status) AS status
+            FROM report_status rs
+            LEFT JOIN finding_candidates fc
+              ON fc.domain = rs.domain AND fc.fingerprint = rs.finding_hash
+            {where.replace('domain', 'rs.domain').replace('status', 'COALESCE(fc.lifecycle_status, rs.status)')}
             ORDER BY
-                CASE status
+                CASE COALESCE(fc.lifecycle_status, rs.status)
                     WHEN 'new' THEN 0
-                    WHEN 'reviewing' THEN 1
-                    WHEN 'needs_info' THEN 2
-                    WHEN 'submitted' THEN 3
-                    WHEN 'accepted' THEN 4
-                    WHEN 'rejected' THEN 5
-                    ELSE 6
+                    WHEN 'needs_review' THEN 1
+                    WHEN 'validating' THEN 2
+                    WHEN 'verified' THEN 3
+                    WHEN 'ready_to_submit' THEN 4
+                    WHEN 'submitted' THEN 5
+                    WHEN 'duplicate' THEN 6
+                    WHEN 'accepted' THEN 7
+                    WHEN 'rejected' THEN 8
+                    WHEN 'archived' THEN 9
+                    ELSE 10
                 END,
-                updated_at DESC
+                rs.updated_at DESC
         """
         with self._lock:
             rows = self._conn.execute(sql, params).fetchall()
@@ -877,6 +895,22 @@ class KnowledgeStore:
         import json as _json
 
         created = 0
+        # Canonical ingest happens before report_status projection sync so
+        # dedupe and deterministic rejection run before expensive work.
+        try:
+            from prometheus.core.candidate_store import CandidateStore
+
+            CandidateStore(self._db_path).ingest_findings(
+                findings,
+                domain=domain,
+                scan_id=scan_id,
+                source_tool="scan_end",
+                source_type="scan_finding",
+            )
+        except Exception:
+            logger.exception("Canonical candidate ingest failed for scan %s", scan_id)
+            raise
+
         for f in findings:
             title = f.get("title", "")
             if not title:
@@ -1099,6 +1133,90 @@ class KnowledgeStore:
         )
         return revalidated
 
+    def get_findings_for_domain(self, domain: str) -> list[dict[str, Any]]:
+        """Return all findings for a domain with key fields for rescan context.
+
+        Returns a lightweight list (title, severity, endpoint, lifecycle_status,
+        fingerprint) suitable for injection into rescan agent prompts.
+        """
+        domain = self._domain_from_url(domain) or domain
+        with self._lock:
+            rows = self._conn.execute(
+                """\
+                SELECT id, title, severity, endpoint, method, parameter,
+                       lifecycle_status, fingerprint, vuln_type, created_at
+                FROM finding_candidates
+                WHERE domain = ?
+                ORDER BY
+                    CASE severity
+                        WHEN 'critical' THEN 1
+                        WHEN 'high' THEN 2
+                        WHEN 'medium' THEN 3
+                        WHEN 'low' THEN 4
+                        ELSE 5
+                    END,
+                    created_at DESC
+                """,
+                (domain,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_unfiled_vulnerabilities(
+        self, domain: str
+    ) -> list[dict[str, Any]]:
+        """Return knowledge entries tagged as vulnerabilities that have no
+        corresponding filed finding. These are leaked discoveries — things
+        Prometheus found but never filed as formal findings.
+
+        Used post-scan to detect gaps in the finding pipeline.
+        """
+        domain = self._domain_from_url(domain) or domain
+        with self._lock:
+            vuln_rows = self._conn.execute(
+                """\
+                SELECT key, value, confidence, source, scan_id, created_at
+                FROM knowledge
+                WHERE domain = ? AND category = 'vulnerability'
+                ORDER BY created_at DESC
+                """,
+                (domain,),
+            ).fetchall()
+
+            finding_rows = self._conn.execute(
+                """\
+                SELECT title, endpoint, fingerprint
+                FROM finding_candidates
+                WHERE domain = ?
+                """,
+                (domain,),
+            ).fetchall()
+
+        findings_lower = [
+            (r["title"] or "").lower() for r in [dict(r) for r in finding_rows]
+        ]
+        unfiled = []
+        for row in [dict(r) for r in vuln_rows]:
+            key = (row.get("key") or "").lower()
+            value = (row.get("value") or "").lower()
+            # Extract words from the knowledge key (split on hyphens/underscores)
+            key_words = set(key.replace("-", " ").replace("_", " ").split())
+            # Check if any finding title shares significant words with this knowledge entry
+            filed = False
+            for ft in findings_lower:
+                ft_words = set(ft.replace("-", " ").replace("_", " ").split())
+                overlap = key_words & ft_words
+                # Match if: key is in title, title is in key, or >2 significant words overlap
+                if key in ft or ft in key or (len(overlap) >= 3 and len(overlap) >= len(key_words) * 0.4):
+                    filed = True
+                    break
+                # Also check value substring match
+                if len(value) > 20 and value[:80] in ft:
+                    filed = True
+                    break
+            if not filed:
+                unfiled.append(row)
+        return unfiled
+
     def get_findings_summary(
         self,
         domain: str | None = None,
@@ -1160,7 +1278,18 @@ class KnowledgeStore:
                 by_target[r["domain"]] = r["cnt"]
 
         # Ensure all standard statuses appear in by_status even if zero
-        for s in ("new", "reviewing", "submitted", "accepted", "rejected", "revalidated"):
+        for s in (
+            "new",
+            "needs_review",
+            "validating",
+            "verified",
+            "ready_to_submit",
+            "submitted",
+            "duplicate",
+            "accepted",
+            "rejected",
+            "archived",
+        ):
             by_status.setdefault(s, 0)
 
         return {
@@ -1171,37 +1300,63 @@ class KnowledgeStore:
         }
 
     def get_ready_to_submit(self) -> list[dict[str, Any]]:
-        """Return findings with status ``'new'`` that have all required
-        fields for a bug-bounty report submission.
-
-        Required fields: ``finding_title``, ``severity``, ``endpoint``,
-        ``cwe``, and ``full_finding_json`` (the full finding content).
-
-        Returns a list of finding dicts.
-        """
+        """Return canonical candidates marked ready_to_submit."""
         with self._lock:
             rows = self._conn.execute(
                 """
-                SELECT * FROM report_status
-                WHERE status = 'new'
-                  AND finding_title IS NOT NULL AND finding_title != ''
-                  AND severity IS NOT NULL AND severity != ''
-                  AND endpoint IS NOT NULL AND endpoint != ''
-                  AND cwe IS NOT NULL AND cwe != ''
-                  AND full_finding_json IS NOT NULL AND full_finding_json != ''
+                SELECT fc.*, rs.id AS report_status_id, rs.platform, rs.report_url, rs.h1_report_id
+                FROM finding_candidates fc
+                LEFT JOIN report_status rs
+                  ON rs.domain = fc.domain AND rs.finding_hash = fc.fingerprint
+                WHERE fc.lifecycle_status = 'ready_to_submit'
                 ORDER BY
-                    CASE severity
+                    CASE fc.severity
                         WHEN 'critical' THEN 0
                         WHEN 'high' THEN 1
                         WHEN 'medium' THEN 2
                         WHEN 'low' THEN 3
                         ELSE 4
                     END,
-                    updated_at DESC
+                    fc.updated_at DESC
                 """,
             ).fetchall()
 
         return [dict(r) for r in rows]
+
+    def record_submission_outcome(
+        self,
+        finding_id: str,
+        outcome: str,
+        comments: str = "",
+        actor: str = "human",
+        platform: str | None = None,
+        report_url: str | None = None,
+    ) -> dict[str, Any]:
+        """Store accepted, duplicate, informative, or rejected outcome feedback."""
+        from prometheus.core.candidate_store import CandidateStore
+
+        return CandidateStore(self._db_path).record_submission_outcome(
+            finding_id=finding_id,
+            outcome=outcome,
+            comments=comments,
+            actor=actor,
+            platform=platform,
+            report_url=report_url,
+        )
+
+    def get_outcome_feedback_summary(self) -> dict[str, Any]:
+        """Return false positive, duplicate, and accepted report summary views."""
+        from prometheus.core.candidate_store import CandidateStore
+
+        summary = CandidateStore(self._db_path).outcome_summary()
+        by_status = summary.get("by_status", {})
+        return {
+            "accepted": by_status.get("accepted", 0),
+            "duplicates": by_status.get("duplicate", 0),
+            "false_positives": by_status.get("rejected", 0),
+            "by_status": by_status,
+            "feedback_rules": summary.get("feedback_rules", []),
+        }
 
     # ------------------------------------------------------------------
     # Housekeeping

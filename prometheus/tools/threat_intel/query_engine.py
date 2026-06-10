@@ -10,7 +10,6 @@ Query flow:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from typing import Any
@@ -18,13 +17,10 @@ from typing import Any
 from prometheus.tools.threat_intel.local_db import ThreatIntelDB
 from prometheus.tools.threat_intel.tool import (
     _ECOSYSTEM_MAP,
-    _guess_ecosystem,
     _get_github_token,
-    _version_in_range,
-    _score_vulnerability,
-    _search_cisa_kev,
-    _fetch_cisa_kev,
+    _guess_ecosystem,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +28,7 @@ logger = logging.getLogger(__name__)
 def _normalize_ecosystem(tech: str) -> str | None:
     """Map a technology name to a normalized ecosystem string."""
     tech_lower = tech.lower().strip()
+
     if tech_lower in _ECOSYSTEM_MAP:
         return _ECOSYSTEM_MAP[tech_lower].lower()
     for key, eco in _ECOSYSTEM_MAP.items():
@@ -42,6 +39,7 @@ def _normalize_ecosystem(tech: str) -> str | None:
 
 def _normalize_package_name(tech: str, ecosystem: str) -> str:
     """Resolve technology name to actual package name for an ecosystem."""
+    tech_lower = tech.lower().strip()
     _PKG_VARIANTS: dict[str, dict[str, str]] = {
         "next.js": {"npm": "next"},
         "nextjs": {"npm": "next"},
@@ -52,7 +50,7 @@ def _normalize_package_name(tech: str, ecosystem: str) -> str:
         "laravel": {"packagist": "laravel/framework"},
         "spring": {"maven": "org.springframework"},
     }
-    tech_lower = tech.lower().strip()
+
     if tech_lower in _PKG_VARIANTS and ecosystem in _PKG_VARIANTS[tech_lower]:
         return _PKG_VARIANTS[tech_lower][ecosystem]
     return tech_lower
@@ -67,6 +65,18 @@ async def _query_circl(client: Any, tech: str, version: str) -> list[dict[str, A
     """Query CIRCL Vulnerability-Lookup for CVEs matching a vendor/product."""
     # CIRCL expects vendor/product in the path; best-effort split
     tech_lower = tech.lower().strip()
+
+    # Guard: reject overly long strings (descriptions, not tech names)
+    if len(tech_lower) > 80:
+        logger.debug("CIRCL: tech string too long (%d chars), skipping: %s...", len(tech_lower), tech_lower[:60])
+        return []
+
+    # Guard: reject strings that look like descriptions (contain spaces + long words)
+    word_count = len(tech_lower.split())
+    if word_count > 5:
+        logger.debug("CIRCL: tech string has %d words, looks like description, skipping", word_count)
+        return []
+
     # Try splitting vendor/product heuristically
     parts = tech_lower.split("/", 1)
     if len(parts) == 2:
@@ -75,6 +85,13 @@ async def _query_circl(client: Any, tech: str, version: str) -> list[dict[str, A
         # Use tech as both vendor and product
         vendor = tech_lower
         product = tech_lower
+
+    # Sanitize: remove characters that break URL paths
+    import re as _re
+    vendor = _re.sub(r'[^a-z0-9._-]', '', vendor)
+    product = _re.sub(r'[^a-z0-9._-]', '', product)
+    if not vendor or not product:
+        return []
 
     url = f"https://cve.circl.lu/api/search/{vendor}/{product}"
     try:
@@ -132,6 +149,18 @@ async def _query_circl(client: Any, tech: str, version: str) -> list[dict[str, A
 
 async def _query_vulnerablecode(client: Any, tech: str, version: str) -> list[dict[str, Any]]:
     """Query VulnerableCode for package vulnerabilities."""
+    # Guard: reject overly long strings (descriptions, not tech names)
+    tech_stripped = tech.strip()
+    if len(tech_stripped) > 80:
+        logger.debug("VulnerableCode: tech string too long (%d chars), skipping: %s...", len(tech_stripped), tech_stripped[:60])
+        return []
+
+    # Guard: reject strings that look like descriptions (too many words)
+    word_count = len(tech_stripped.split())
+    if word_count > 5:
+        logger.debug("VulnerableCode: tech string has %d words, looks like description, skipping", word_count)
+        return []
+
     ecosystem = _guess_ecosystem(tech)
     if not ecosystem:
         logger.debug("No ecosystem for '%s', skipping VulnerableCode", tech)
@@ -150,9 +179,15 @@ async def _query_vulnerablecode(client: Any, tech: str, version: str) -> list[di
     }
     purl_eco = eco_to_purl.get(ecosystem.lower(), ecosystem.lower())
 
-    tech_lower = tech.lower().strip()
     # Use package name normalization if available
     pkg_name = _normalize_package_name(tech, ecosystem)
+
+    # Guard: validate package name is a clean identifier (not a sentence)
+    import re as _re
+    if not _re.match(r'^[a-zA-Z0-9@/_.-]+$', pkg_name) or len(pkg_name) > 60:
+        logger.debug("VulnerableCode: pkg_name '%s' doesn't look like a valid package, skipping", pkg_name[:60])
+        return []
+
     purl = f"pkg:{purl_eco}/{pkg_name}"
 
     url = f"https://public.vulnerablecode.io/api/v3/packages/?purl={purl}"
@@ -341,14 +376,18 @@ def _enrich_with_epss(
 async def query_threats(
     fingerprints: list[dict[str, str]],
     db: ThreatIntelDB | None = None,
+    *,
+    local_only: bool = True,
 ) -> dict[str, Any]:
     """Query threats for a list of technology fingerprints.
 
-    Uses local DB first, falls back to online sources for missing data.
+    Uses local DB first. When local_only=True (default), never queries
+    online sources — returns local results only, zero API cost.
 
     Args:
         fingerprints: List of {"technology": "next.js", "version": "14.2.0"}
         db: Optional ThreatIntelDB instance. Creates one if not provided.
+        local_only: If True (default), skip online fallback entirely.
 
     Returns:
         Dict with per-technology results, scores, and metadata.
@@ -361,7 +400,7 @@ async def query_threats(
         db = ThreatIntelDB()
 
     try:
-        return await _query_impl(fingerprints, db)
+        return await _query_impl(fingerprints, db, local_only=local_only)
     finally:
         if own_db:
             db.close()
@@ -370,6 +409,8 @@ async def query_threats(
 async def _query_impl(
     fingerprints: list[dict[str, str]],
     db: ThreatIntelDB,
+    *,
+    local_only: bool = True,
 ) -> dict[str, Any]:
     """Core implementation."""
     start = time.time()
@@ -407,13 +448,34 @@ async def _query_impl(
             # Score and sort
             kev_cves = set(db.query_kev_cves())
             for r in local_results:
+                # SCA confidence flagging per ACM SCA paper findings:
+                # version-range matching is unreliable across databases
+                if ecosystem is None:
+                    r["sca_confidence"] = "low"
+                elif r.get("version_match") == "vulnerable":
+                    r["sca_confidence"] = "high"
+                elif r.get("version_match") == "unknown" or not r.get("version_match"):
+                    r["sca_confidence"] = "medium"
+                else:
+                    r["sca_confidence"] = "medium"
+
                 r["priority_score"] = _score_local_vulnerability(r, kev_cves)
             local_results.sort(key=lambda r: r.get("priority_score", 0), reverse=True)
+
+            # Aggregate SCA confidence for the technology-level result
+            confidences = {r.get("sca_confidence", "medium") for r in local_results}
+            if "high" in confidences and "low" not in confidences and "medium" not in confidences:
+                tech_sca_confidence = "high"
+            elif "low" in confidences and "high" not in confidences:
+                tech_sca_confidence = "low"
+            else:
+                tech_sca_confidence = "mixed"
 
             results.append({
                 "technology": tech,
                 "version": version,
                 "ecosystem": ecosystem,
+                "sca_confidence": tech_sca_confidence,
                 "total_vulnerabilities": len(local_results),
                 "source": "LOCAL_DB",
                 "vulnerabilities": local_results[:50],
@@ -421,17 +483,20 @@ async def _query_impl(
         else:
             # No local results — mark for online query
             needs_online.append(fp)
+            sca_conf = "low" if ecosystem is None else "medium"
             results.append({
                 "technology": tech,
                 "version": version,
                 "ecosystem": ecosystem,
+                "sca_confidence": sca_conf,
                 "total_vulnerabilities": 0,
                 "source": "PENDING_ONLINE",
                 "vulnerabilities": [],
             })
 
     # Phase 2: Online fallback for fingerprints with 0 local results
-    if needs_online:
+    # Only if local_only=False. When local_only=True (default), skip online APIs.
+    if needs_online and not local_only:
         logger.info("Local DB miss for %d fingerprints, querying online", len(needs_online))
         online_results = await _query_online(needs_online, db)
 
@@ -486,7 +551,7 @@ async def _query_online(
 
             try:
                 # Import online query functions
-                from prometheus.tools.threat_intel.tool import _query_nvd, _query_osv, _query_ghsa
+                from prometheus.tools.threat_intel.tool import _query_ghsa, _query_nvd, _query_osv
 
                 # Query all sources in parallel (7 sources)
                 nvd_task = _query_nvd(client, tech, version)
@@ -569,6 +634,14 @@ async def _query_online(
                 # Score results
                 kev_cves = set(db.query_kev_cves())
                 for r in deduped:
+                    # SCA confidence per vulnerability
+                    if ecosystem is None:
+                        r["sca_confidence"] = "low"
+                    elif r.get("version_match") == "vulnerable":
+                        r["sca_confidence"] = "high"
+                    else:
+                        r["sca_confidence"] = "medium"
+
                     r["priority_score"] = _score_local_vulnerability(
                         {
                             "cve_id": r.get("cve_id", ""),
@@ -577,15 +650,26 @@ async def _query_online(
                             "severity": r.get("severity", ""),
                             "cvss_score": r.get("cvss_score", 0.0),
                             "epss_score": r.get("epss_score"),
+                            "version_match": r.get("version_match", "unknown"),
                         },
                         kev_cves,
                     )
                 deduped.sort(key=lambda r: r.get("priority_score", 0), reverse=True)
 
+                # Aggregate SCA confidence for the technology-level result
+                confidences = {r.get("sca_confidence", "medium") for r in deduped}
+                if confidences == {"high"}:
+                    tech_sca_confidence = "high"
+                elif confidences == {"low"}:
+                    tech_sca_confidence = "low"
+                else:
+                    tech_sca_confidence = "mixed"
+
                 results.append({
                     "technology": tech,
                     "version": version,
                     "ecosystem": ecosystem,
+                    "sca_confidence": tech_sca_confidence,
                     "total_vulnerabilities": len(deduped),
                     "source": "ONLINE",
                     "nvd_count": len(nvd),
@@ -598,7 +682,7 @@ async def _query_online(
                 })
 
             except Exception as exc:
-                logger.error("Online query failed for %s: %s", tech, exc)
+                logger.exception("Online query failed for %s: %s", tech, exc)
                 results.append({
                     "technology": tech,
                     "version": version,
@@ -655,6 +739,13 @@ def _score_local_vulnerability(
     if isinstance(cvss, (int, float)) and cvss >= 9.0:
         score += 10
 
+    # SCA version-match confidence adjustment (ACM SCA paper findings)
+    version_match = (vuln.get("version_match") or "").lower()
+    if version_match == "vulnerable":
+        score += 5   # confirmed match — boost priority
+    elif version_match == "not_affected":
+        score -= 5   # still include, but lower priority
+
     return score
 
 
@@ -694,7 +785,13 @@ async def inject_threat_intel(
 
         tech = tech_result.get("technology", "?")
         version = tech_result.get("version", "?")
-        lines.append(f"--- {tech} {version} ({len(vulns)} vulns) ---")
+        sca_conf = tech_result.get("sca_confidence", "unknown")
+        conf_note = ""
+        if sca_conf == "low":
+            conf_note = " [LOW CONFIDENCE — no ecosystem match, manually verify]"
+        elif sca_conf in ("medium", "mixed"):
+            conf_note = " [Version ranges not all confirmed — test regardless]"
+        lines.append(f"--- {tech} {version} ({len(vulns)} vulns){conf_note} ---")
 
         # Show top 10 highest-scored vulns
         for v in vulns[:10]:

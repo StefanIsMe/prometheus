@@ -25,6 +25,20 @@ _DEFAULT_PATH: Path = Path.home() / ".prometheus" / "cli-config.json"
 _override: Path | None = None
 _cached: Settings | None = None
 
+# Prometheus JSON config is not an LLM routing source of truth.
+# These legacy keys may still exist on disk, but Hermes owns them now.
+_LLM_ROUTING_ALIASES = {
+    "PROMETHEUS_LLM",
+    "PROMETHEUS_USE_HERMES_MODEL",
+    "LLM_API_KEY",
+    "OPENAI_API_KEY",
+    "LLM_API_BASE",
+    "OPENAI_API_BASE",
+    "OPENAI_BASE_URL",
+    "LITELLM_BASE_URL",
+    "OLLAMA_API_BASE",
+}
+
 
 def load_settings() -> Settings:
     """Resolve settings from env + JSON file + defaults. Memoized.
@@ -85,6 +99,8 @@ def persist_current() -> None:
             for alias in _aliases_for(finfo):
                 value = os.environ.get(alias.upper())
                 if value:
+                    if alias.upper() in _LLM_ROUTING_ALIASES:
+                        continue
                     env_block[alias.upper()] = value
                     break
 
@@ -135,6 +151,8 @@ def _read_json_overrides(path: Path) -> dict[str, dict[str, Any]]:
                 key = alias.upper()
                 if key in os.environ:
                     break  # env wins; skip JSON for this field
+                if key in _LLM_ROUTING_ALIASES:
+                    continue
                 if key in env_block_upper:
                     sub_data[fname] = env_block_upper[key]
                     break

@@ -11,6 +11,33 @@ Exhaustive security assessment. Maximum coverage, maximum depth. Finding what ot
 
 Thorough understanding before exploitation. Test every parameter, every endpoint, every edge case. Chain findings for maximum impact.
 
+## CRITICAL: Systematic Coverage Mandate
+
+After reconnaissance, you MUST systematically test ALL discovered URL paths for ALL applicable vulnerability types. Do NOT stop after finding a few issues — the goal is complete coverage.
+
+COVERAGE ENFORCEMENT (follow this exact workflow):
+1. After spidering/crawling: list ALL unique URL paths and patterns discovered (use exec_command to extract from proxy/sitemap).
+2. For EACH URL path pattern, identify which vulnerability types apply (XSS, SQLi, CORS, redirect, injection, etc.). Every path MUST be assigned at least one vuln type.
+3. For EACH (url_path × vuln_type) combination: spawn a specialized subagent to test it. Cover 100% of combinations before finishing.
+4. Track coverage explicitly in your todo list: one todo per (path, vuln_type) pair. Mark done only after the subagent returns results.
+5. Do NOT call finish_scan until ALL todos are marked done or cancelled with documented reason.
+
+EXAMPLE COVERAGE:
+- /reflected/* → Reflected XSS (test ALL sub-paths: /body, /attribute, /js, /eval, /css, /tag, /event, /iframe, etc.)
+- /dom/* → DOM XSS (test ALL sources: cookie, localStorage, window.name, location.hash, postMessage, etc.)
+- /cors/* → CORS misconfiguration (test ALL sub-paths)
+- /redirect/* → Open redirect
+- /angular/* → Template injection
+- /escape/* → Output encoding bypass
+- /remoteinclude/* → Remote script inclusion
+- /vulnerablelibraries/* → Known vulnerable components
+- /insecurethirdpartyscripts/* → Missing SRI, bad imports
+- /mixedcontent/* → Mixed content
+- /address/* → DOM XSS via address bar
+- /urldom/* → URL-based DOM manipulation
+
+If you discover N URL patterns and M vulnerability types apply across them, you should have at least N×M todos. Completing only 2-3 patterns while skipping others is a FAILED scan.
+
 ## Phase 1: Exhaustive Reconnaissance
 
 **Whitebox (source available)**

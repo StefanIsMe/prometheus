@@ -1,5 +1,6 @@
 import json
 import logging
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,15 +23,27 @@ from prometheus.telemetry import posthog, scarf
 logger = logging.getLogger(__name__)
 
 _global_report_state: Optional["ReportState"] = None
+_thread_report_state = threading.local()
 
 
 def get_global_report_state() -> Optional["ReportState"]:
+    # Prefer thread-local (for concurrent scans in orchestrator)
+    state = getattr(_thread_report_state, "state", None)
+    if state is not None:
+        return state
     return _global_report_state
 
 
 def set_global_report_state(report_state: "ReportState") -> None:
     global _global_report_state  # noqa: PLW0603
     _global_report_state = report_state
+    # Also set thread-local for concurrent scan isolation
+    _thread_report_state.state = report_state
+
+
+def clear_thread_report_state() -> None:
+    """Clear thread-local report state after scan completes."""
+    _thread_report_state.state = None
 
 
 class ReportState:

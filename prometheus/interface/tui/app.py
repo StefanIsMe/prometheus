@@ -27,18 +27,19 @@ from textual.binding import Binding
 from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.reactive import reactive
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label, Static, TextArea, Tree, TabbedContent, TabPane
+from textual.widgets import Button, Label, Static, TabbedContent, TabPane, TextArea, Tree
 from textual.widgets.tree import TreeNode
 
 from prometheus.config import load_settings
 from prometheus.core.runner import run_prometheus_scan
+from prometheus.interface.tui.automation_panels import AutomatedScansPanel, ProgramsPanel
+from prometheus.interface.tui.findings_library import FindingsLibraryPanel
 from prometheus.interface.tui.live_view import TuiLiveView
 from prometheus.interface.tui.messages import send_user_message_to_agent
 from prometheus.interface.tui.renderers import render_tool_widget
 from prometheus.interface.tui.renderers.agent_message_renderer import AgentMessageRenderer
 from prometheus.interface.tui.renderers.user_message_renderer import UserMessageRenderer
-from prometheus.interface.tui.findings_library import FindingsLibraryPanel
-from prometheus.interface.tui.automation_panels import AutomatedScansPanel, ProgramsPanel
+from prometheus.interface.tui.scan_launcher import ScanLauncherScreen
 from prometheus.interface.tui.security_feeds_panel import SecurityFeedsPanel
 from prometheus.interface.utils import build_tui_stats_text
 from prometheus.report.state import ReportState, set_global_report_state
@@ -147,7 +148,7 @@ class SplashScreen(Static):  # type: ignore[misc]
         self._panel_static.update(panel)
 
     def _build_panel(self, start_line: Text) -> Panel:
-        content = Group(
+        content_parts: list[Any] = [
             Align.center(Text(self.BANNER.strip("\n"), style=self.PRIMARY_GREEN, justify="center")),
             Align.center(Text(" ")),
             Align.center(self._build_welcome_text()),
@@ -156,17 +157,45 @@ class SplashScreen(Static):  # type: ignore[misc]
             Align.center(Text(" ")),
             Align.center(start_line.copy()),
             Align.center(Text(" ")),
-            Align.center(self._build_url_text()),
-        )
+        ]
 
-        return Panel.fit(content, border_style=self.PRIMARY_GREEN, padding=(1, 6))
+        # Show target and scan mode if available
+        try:
+            app = self.app
+            args = getattr(app, "args", None)
+            if args and not getattr(args, "browse", False):
+                target_infos = getattr(args, "targets_info", None) or []
+                if target_infos:
+                    target_names = [t.get("original", str(t)) for t in target_infos]
+                    scan_text = Text()
+                    scan_text.append("Target: ", style=Style(color="white", dim=True))
+                    scan_text.append(
+                        ", ".join(target_names[:3]),
+                        style=Style(color="white", bold=True),
+                    )
+                    if len(target_names) > 3:
+                        scan_text.append(f" (+{len(target_names) - 3} more)", style=Style(color="#737373"))
+                    scan_text.append("\n")
+                    scan_text.append("Mode: ", style=Style(color="white", dim=True))
+                    scan_text.append(
+                        str(getattr(args, "scan_mode", "deep")).upper(),
+                        style=Style(color="#4ade80", bold=True),
+                    )
+                    content_parts.append(Align.center(scan_text))
+                    content_parts.append(Align.center(Text(" ")))
+        except Exception:
+            pass
+
+        content_parts.append(Align.center(self._build_url_text()))
+
+        return Panel.fit(Group(*content_parts), border_style=self.PRIMARY_GREEN, padding=(1, 6))
 
     def _build_url_text(self) -> Text:
-        return Text("prometheus.ai", style=Style(color=self.PRIMARY_GREEN, bold=True))
+        return Text("Prometheus.ai", style=Style(color=self.PRIMARY_GREEN, bold=True))
 
     def _build_welcome_text(self) -> Text:
         text = Text("Welcome to ", style=Style(color="white", bold=True))
-        text.append("prometheus", style=Style(color=self.PRIMARY_GREEN, bold=True))
+        text.append("Prometheus", style=Style(color=self.PRIMARY_GREEN, bold=True))
         text.append("!", style=Style(color="white", bold=True))
         return text
 
@@ -177,7 +206,7 @@ class SplashScreen(Static):  # type: ignore[misc]
         return Text("Open-source AI hackers for your apps", style=Style(color="white", dim=True))
 
     def _build_start_line_text(self, phase: int) -> Text:
-        full_text = "Starting prometheus Agent"
+        full_text = "Starting Prometheus Agent"
         text_len = len(full_text)
 
         shine_pos = phase % (text_len + 8)
@@ -203,7 +232,7 @@ class SplashScreen(Static):  # type: ignore[misc]
 class HelpScreen(ModalScreen):  # type: ignore[misc]
     def compose(self) -> ComposeResult:
         yield Grid(
-            Label("prometheus Help", id="help_title"),
+            Label("Prometheus Help", id="help_title"),
             Label(
                 "F1        Help\nF2        Cycle Tabs (Manual/Auto/Programs/Reports/Feeds)\nCtrl+Q/C  Quit\nESC       Stop Agent\n"
                 "Enter     Send message to agent\nTab       Switch panels\n↑/↓       Navigate tree",
@@ -632,7 +661,7 @@ class VulnerabilitiesPanel(VerticalScroll):  # type: ignore[misc]
 class QuitScreen(ModalScreen):  # type: ignore[misc]
     def compose(self) -> ComposeResult:
         yield Grid(
-            Label("Quit prometheus?", id="quit_title"),
+            Label("Quit Prometheus?", id="quit_title"),
             Grid(
                 Button("Yes", variant="error", id="quit"),
                 Button("No", variant="default", id="cancel"),
@@ -689,6 +718,7 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         Binding("ctrl+q", "request_quit", "Quit", priority=True),
         Binding("ctrl+c", "request_quit", "Quit", priority=True),
         Binding("escape", "stop_selected_agent", "Stop Agent", priority=True),
+        Binding("f3", "launch_scan", "Launch Scan", priority=True),
     ]
 
     def __init__(self, args: argparse.Namespace):
@@ -734,6 +764,10 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         ]
         self._dot_animation_timer: Any | None = None
 
+        self._reports_refresh_counter: int = 0
+        self._reports_refresh_interval: int = 15  # refresh every ~5s (15 * 0.35s)
+        self._reports_needs_refresh: bool = False
+
         self._setup_cleanup_handlers()
 
     def _build_scan_config(self, args: argparse.Namespace) -> dict[str, Any]:
@@ -752,10 +786,62 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         }
 
     def _setup_cleanup_handlers(self) -> None:
+        def _cancel_agents() -> None:
+            """Cancel all running agents before exit."""
+            try:
+                loop = getattr(self, "_scan_loop", None)
+                if loop and not loop.is_closed():
+                    root_ids = [
+                        aid
+                        for aid, st in self.coordinator.statuses.items()
+                        if st == "running" and self.coordinator.parent_of.get(aid) is None
+                    ]
+                    for root_id in root_ids:
+                        try:
+                            future = asyncio.run_coroutine_threadsafe(
+                                self.coordinator.cancel_descendants(root_id),
+                                loop,
+                            )
+                            future.result(timeout=5)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
         def cleanup_on_exit() -> None:
+            self._scan_stop_event.set()
+            _cancel_agents()
+            if self._scan_thread and self._scan_thread.is_alive():
+                self._scan_thread.join(timeout=5)
+            # Force-close the scan event loop to prevent deadlock during
+            # interpreter finalization (daemon thread may still be running)
+            loop = getattr(self, "_scan_loop", None)
+            if loop and not loop.is_closed():
+                try:
+                    loop.call_soon_threadsafe(loop.stop)
+                except Exception:
+                    pass
+                with contextlib.suppress(Exception):
+                    loop.close()
             self.report_state.cleanup()
+            # Kill orphaned sandbox containers
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["docker", "ps", "--filter", "ancestor=ghcr.io/usestrix/strix-sandbox:1.0.0",
+                     "--format", "{{.ID}}"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                container_ids = result.stdout.strip().split()
+                if container_ids:
+                    subprocess.run(["docker", "stop", *container_ids], capture_output=True, timeout=30)
+                    subprocess.run(["docker", "rm", *container_ids], capture_output=True, timeout=10)
+            except Exception:
+                pass
 
         def signal_handler(_signum: int, _frame: Any) -> None:
+            self._scan_stop_event.set()
+            _cancel_agents()
             self.report_state.cleanup(status="interrupted")
             sys.exit(0)
 
@@ -781,8 +867,6 @@ class prometheusTUIApp(App):  # type: ignore[misc]
             self.mount(main_container)
 
             # Tab 1: Manual Scans (existing chat + sidebar layout)
-            chat_area_container = Vertical(id="chat_area_container")
-
             chat_display = Static("", id="chat_display")
             chat_history = VerticalScroll(chat_display, id="chat_history")
             chat_history.can_focus = True
@@ -821,10 +905,8 @@ class prometheusTUIApp(App):  # type: ignore[misc]
 
             sidebar = Vertical(agents_tree, vulnerabilities_panel, stats_scroll, id="sidebar")
 
+            chat_area_container = Vertical(chat_history, agent_status_display, chat_input_container, id="chat_area_container")
             scan_content = Horizontal(chat_area_container, sidebar, id="content_container")
-            chat_area_container.mount(chat_history)
-            chat_area_container.mount(agent_status_display)
-            chat_area_container.mount(chat_input_container)
 
             # Tab 2: Automated Scans
             auto_scans_content = AutomatedScansPanel(id="auto_scans_container")
@@ -931,7 +1013,7 @@ class prometheusTUIApp(App):  # type: ignore[misc]
             self._focus_chat_input()
 
     def on_mount(self) -> None:
-        self.title = "prometheus"
+        self.title = "Prometheus"
 
         self.set_timer(4.5, self._hide_splash_screen)
 
@@ -942,6 +1024,72 @@ class prometheusTUIApp(App):  # type: ignore[misc]
             self._start_scan_thread()
 
         self.set_interval(0.35, self._update_ui)
+
+    def action_launch_scan(self) -> None:
+        """Open the scan launcher modal (F3)."""
+        if self._scan_thread and self._scan_thread.is_alive():
+            self.notify("Scan already running", severity="warning")
+            return
+        self.push_screen(ScanLauncherScreen(), self._on_scan_launcher_result)
+
+    def _on_scan_launcher_result(self, result: dict[str, Any] | None) -> None:
+        """Handle scan launcher result — update config and start scan."""
+        if result is None:
+            return
+
+        self.notify("Preparing scan...", severity="information", timeout=5)
+
+        from prometheus.core.rate_limiter import set_rate
+
+        rate_limit = result.get("rate_limit", 5)
+        if rate_limit > 0:
+            set_rate(rate_limit)
+        else:
+            set_rate(0)
+
+        from prometheus.interface.utils import (
+            assign_workspace_subdirs,
+            generate_run_name,
+            infer_target_type,
+            rewrite_localhost_targets,
+        )
+
+        target = result["target"]
+        target_type, target_dict = infer_target_type(target)
+        targets_info = [{"type": target_type, "details": target_dict, "original": target}]
+        assign_workspace_subdirs(targets_info)
+        rewrite_localhost_targets(targets_info, "host.docker.internal")
+        run_name = generate_run_name(targets_info)
+
+        self.scan_config = {
+            "scan_id": run_name,
+            "targets": targets_info,
+            "user_instructions": result.get("instructions", ""),
+            "run_name": run_name,
+            "diff_scope": {"active": False},
+            "scan_mode": result.get("scan_mode", "deep"),
+            "non_interactive": False,
+            "local_sources": [],
+            "scope_mode": "auto",
+            "diff_base": None,
+            "resume_instruction": "",
+        }
+
+        self.report_state = ReportState(run_name)
+        self.report_state.set_scan_config(self.scan_config)
+        self.report_state.save_run_data()
+        set_global_report_state(self.report_state)
+        self.live_view = TuiLiveView()
+        from prometheus.core.agents import AgentCoordinator
+
+        self.coordinator = AgentCoordinator()
+        self.agent_nodes = {}
+        self._displayed_agents = set()
+        self._displayed_events = []
+        self.selected_agent_id = None
+
+        self._start_scan_thread()
+        self.notify("Scan started — agents are loading", severity="information", timeout=3)
 
     def _update_ui(self) -> None:
         if self.show_splash:
@@ -978,6 +1126,7 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         self._update_stats_display()
 
         self._update_vulnerabilities_panel()
+        self._maybe_refresh_reports_tab()
 
     def _sync_agent_graph(self) -> None:
         future = self._agent_graph_sync_future
@@ -1046,14 +1195,20 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         self,
     ) -> tuple[Any, str | None]:
         if not self.selected_agent_id:
-            return self._get_chat_placeholder_content("Loading...", "placeholder-no-agent")
+            if getattr(self.args, "browse", False):
+                return self._get_chat_placeholder_content(
+                    "No scan running. Provide targets to start scanning.",
+                    "placeholder-browse-mode",
+                )
+            return self._get_startup_progress_content()
 
         events = self._gather_agent_events(self.selected_agent_id)
 
         if not events:
-            return self._get_chat_placeholder_content(
-                "Starting agent...", "placeholder-no-activity"
-            )
+            # Agent registered but first LLM event hasn't arrived yet.
+            # Show startup progress (Docker sandbox, threat intel, etc.)
+            # so the user sees what's happening instead of a static message.
+            return self._get_startup_progress_content()
 
         current_event_ids = [f"{e['id']}:{e.get('version', 0)}" for e in events]
         if current_event_ids == self._displayed_events:
@@ -1089,6 +1244,40 @@ class prometheusTUIApp(App):  # type: ignore[misc]
 
         if is_at_bottom:
             self.call_later(chat_history.scroll_end, animate=False)
+
+    def _get_startup_progress_content(self) -> tuple[Text, str]:
+        """Show scan startup progress messages instead of generic 'Loading...'."""
+        messages = self.live_view.system_messages
+        text = Text()
+
+        # Header
+        target_names = [t.get("original", "?") for t in self.scan_config.get("targets", [])]
+        targets_str = ", ".join(target_names) if target_names else "starting"
+        scan_mode = self.scan_config.get("scan_mode", "deep")
+        text.append(f"Starting {scan_mode} scan of ", style="dim")
+        text.append(targets_str, style="bold white")
+        text.append("\n\n")
+
+        if not messages:
+            text.append("Initializing scan engine...", style="dim")
+            return text, "chat-placeholder placeholder-startup"
+
+        # Show the latest 12 messages, newest first
+        recent = messages[-12:]
+        for msg in reversed(recent):
+            text.append("  ")
+            text.append("●", style="#4ade80")
+            text.append("  ")
+            text.append(msg["message"], style="dim")
+            text.append("\n")
+
+        # If we have agents now, add a hint
+        if self.live_view.agents:
+            text.append("\n")
+            text.append("Agents are live — select one from the sidebar to view activity.",
+                       style="#22c55e")
+
+        return text, "chat-placeholder placeholder-startup"
 
     def _get_chat_placeholder_content(
         self, message: str, placeholder_class: str
@@ -1243,6 +1432,18 @@ class prometheusTUIApp(App):  # type: ignore[misc]
             return
 
         if not self.selected_agent_id:
+            # Show startup progress in status bar when scan is initializing
+            msgs = self.live_view.system_messages
+            if msgs and not self.live_view.agents:
+                latest = msgs[-1]["message"]
+                text = Text()
+                text.append_text(self._get_sweep_animation(self._sweep_colors))
+                text.append(latest, style="dim")
+                self._safe_widget_operation(status_text.update, text)
+                self._safe_widget_operation(keymap_indicator.update, Text())
+                self._safe_widget_operation(status_display.remove_class, "hidden")
+                self._start_dot_animation()
+                return
             self._safe_widget_operation(status_display.add_class, "hidden")
             return
 
@@ -1318,6 +1519,29 @@ class prometheusTUIApp(App):  # type: ignore[misc]
 
         self._safe_widget_operation(vuln_panel.remove_class, "hidden")
         vuln_panel.update_vulnerabilities(enriched_vulns)
+
+    def _maybe_refresh_reports_tab(self) -> None:
+        """Periodically refresh the Reports tab when it's active."""
+        # Immediate refresh when a new finding was filed
+        if self._reports_needs_refresh and self.active_tab == "reports":
+            self._reports_needs_refresh = False
+            self._do_refresh_reports()
+            return
+
+        # Periodic refresh on interval
+        self._reports_refresh_counter += 1
+        if self._reports_refresh_counter >= self._reports_refresh_interval:
+            self._reports_refresh_counter = 0
+            if self.active_tab == "reports":
+                self._do_refresh_reports()
+
+    def _do_refresh_reports(self) -> None:
+        """Refresh the FindingsLibraryPanel if mounted."""
+        try:
+            panel = self.query_one("#reports_container", FindingsLibraryPanel)
+            panel.refresh_findings()
+        except Exception:
+            pass
 
     def _get_sweep_animation(self, color_palette: list[str]) -> Text:
         text = Text()
@@ -1422,6 +1646,13 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         self._update_agent_status_display()
 
     def _start_scan_thread(self) -> None:
+        def _post_progress(msg: str) -> None:
+            """Thread-safe: post a progress message to the TUI."""
+            try:
+                self.call_from_thread(self.live_view.add_system_message, msg)
+            except Exception:
+                pass
+
         def scan_target() -> None:
             try:
                 loop = asyncio.new_event_loop()
@@ -1431,6 +1662,38 @@ class prometheusTUIApp(App):  # type: ignore[misc]
                 try:
                     if not self._scan_stop_event.is_set():
                         image = load_settings().runtime.image or "prometheus-sandbox:latest"
+
+                        # Browser prescan — runs before the Docker sandbox scan.
+                        # Discovers in-scope assets via program DB match and runs
+                        # offline IDOR + info disclosure checks. Zero LLM tokens.
+                        # Runs in the scan thread so it doesn't block the TUI startup.
+                        try:
+                            from prometheus.tools.idor_scanner.prescan import run_browser_prescan
+                            prescan_targets = run_browser_prescan(
+                                self.scan_config.get("targets", [])
+                            )
+                            if prescan_targets:
+                                from prometheus.interface.utils import (
+                                    assign_workspace_subdirs,
+                                    infer_target_type,
+                                    rewrite_localhost_targets,
+                                )
+                                original = self.scan_config["targets"][0]["original"]
+                                _post_progress(f"Expanded scan targets: {original} -> {len(prescan_targets)} asset(s)")
+                                new_targets = []
+                                for t in prescan_targets:
+                                    target_type, target_dict = infer_target_type(t)
+                                    new_targets.append({
+                                        "type": target_type,
+                                        "details": target_dict,
+                                        "original": t,
+                                    })
+                                assign_workspace_subdirs(new_targets)
+                                rewrite_localhost_targets(new_targets, "host.docker.internal")
+                                self.scan_config["targets"] = new_targets
+                        except Exception as e:
+                            logger.warning("Browser prescan skipped: %s", e)
+
                         loop.run_until_complete(
                             run_prometheus_scan(
                                 scan_config=self.scan_config,
@@ -1440,16 +1703,23 @@ class prometheusTUIApp(App):  # type: ignore[misc]
                                 coordinator=self.coordinator,
                                 interactive=True,
                                 event_sink=self._capture_sdk_event,
+                                progress_callback=_post_progress,
                             ),
                         )
 
                 except (KeyboardInterrupt, asyncio.CancelledError):
                     logger.info("Scan interrupted by user")
+                except RuntimeError as e:
+                    if (
+                        "Event loop stopped before Future completed" in str(e)
+                        or "Prepared model input is empty" in str(e)
+                    ):
+                        logger.info("Scan loop stopped (clean shutdown): %s", e)
+                    else:
+                        logging.exception("Runtime error during scan")
+                        self._scan_error = e
                 except (ConnectionError, TimeoutError) as e:
                     logging.exception("Network error during scan")
-                    self._scan_error = e
-                except RuntimeError as e:
-                    logging.exception("Runtime error during scan")
                     self._scan_error = e
                 except Exception as e:
                     logging.exception("Unexpected error during scan")
@@ -1470,13 +1740,49 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         self._scan_thread.start()
 
     def _capture_sdk_event(self, agent_id: str, event: Any) -> None:
+        # The SDK event sink is invoked from the scan's asyncio loop on a
+        # background thread. Textual's call_from_thread raises RuntimeError
+        # when the app's loop is not yet up or is shutting down, and that
+        # early-exit path drops the run_callback coroutine it just built,
+        # producing a `coroutine 'run_callback' was never awaited` warning.
+        # use_post_message routes the call through Textual's internal
+        # thread-safe message queue, which is the documented primitive for
+        # this exact case. On Python 3.14 we still need to guard against the
+        # post-teardown window where post_message is no longer safe.
+        if not self._loop or not self._thread_id or not self.is_running:
+            try:
+                self._record_sdk_event(agent_id, event)
+            except Exception:
+                pass
+            return
         try:
-            self.call_from_thread(self._record_sdk_event, agent_id, event)
+            self.call_later(self._record_sdk_event, agent_id, event)
         except RuntimeError:
-            self._record_sdk_event(agent_id, event)
+            try:
+                self._record_sdk_event(agent_id, event)
+            except Exception:
+                pass
 
     def _record_sdk_event(self, agent_id: str, event: Any) -> None:
         self.live_view.ingest_sdk_event(agent_id, event)
+        # Detect vulnerability report creation for real-time Reports tab refresh
+        try:
+            event_type = getattr(event, "type", "")
+            if event_type == "run_item_stream_event":
+                item = getattr(event, "item", None)
+                if item is not None and getattr(item, "type", "") == "tool_call_output_item":
+                    raw = getattr(item, "raw_item", None)
+                    if raw is not None:
+                        name = str(raw.get("name", "") if isinstance(raw, dict) else getattr(raw, "name", "") or "")
+                        if name == "create_vulnerability_report":
+                            output = getattr(item, "output", None)
+                            if output is None:
+                                output = raw.get("output", "") if isinstance(raw, dict) else getattr(raw, "output", "")
+                            output_str = str(output) if not isinstance(output, str) else output
+                            if '"success": true' in output_str.lower():
+                                self._reports_needs_refresh = True
+        except Exception:
+            pass
 
     def _add_agent_node(self, agent_data: dict[str, Any]) -> None:
         if len(self.screen_stack) > 1 or self.show_splash:
@@ -1775,10 +2081,41 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         )
 
     def action_custom_quit(self) -> None:
-        if self._scan_thread and self._scan_thread.is_alive():
-            self._scan_stop_event.set()
+        self._scan_stop_event.set()
 
-            self._scan_thread.join(timeout=1.0)
+        # Cancel all running agents before joining
+        try:
+            loop = getattr(self, "_scan_loop", None)
+            if loop and not loop.is_closed():
+                root_ids = [
+                    aid
+                    for aid, st in self.coordinator.statuses.items()
+                    if st == "running" and self.coordinator.parent_of.get(aid) is None
+                ]
+                for root_id in root_ids:
+                    try:
+                        future = asyncio.run_coroutine_threadsafe(
+                            self.coordinator.cancel_descendants(root_id),
+                            loop,
+                        )
+                        future.result(timeout=3)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        if self._scan_thread and self._scan_thread.is_alive():
+            self._scan_thread.join(timeout=5)
+
+        # Force-close the scan event loop to prevent deadlock
+        loop = getattr(self, "_scan_loop", None)
+        if loop and not loop.is_closed():
+            try:
+                loop.call_soon_threadsafe(loop.stop)
+            except Exception:
+                pass
+            with contextlib.suppress(Exception):
+                loop.close()
 
         self.report_state.cleanup()
 
@@ -1907,6 +2244,14 @@ class prometheusTUIApp(App):  # type: ignore[misc]
 
 
 async def run_tui(args: argparse.Namespace) -> None:
+    from prometheus.core.paths import configure_runs_dir
+    from prometheus.config import load_settings as _load_settings
+    _settings = _load_settings()
+    if _settings.runtime.runs_dir:
+        configure_runs_dir(_settings.runtime.runs_dir)
+    else:
+        configure_runs_dir("/mnt/hdd/prometheus-data")
+
     app = prometheusTUIApp(args)
     await app.run_async()
     if app._scan_error is not None:

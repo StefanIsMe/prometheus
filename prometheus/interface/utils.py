@@ -235,9 +235,32 @@ def _build_vulnerability_stats(stats_text: Text, report_state: Any) -> None:
         stats_text.append(")", style="dim white")
         stats_text.append("\n")
     else:
-        stats_text.append("Vulnerabilities  ", style="bold #22c55e")
-        stats_text.append("0", style="bold white")
-        stats_text.append(" (No exploitable vulnerabilities detected)", style="dim green")
+        # Check if the scan produced a narrative report with findings
+        scan_results = getattr(report_state, "scan_results", None) or {}
+        narrative_text = (
+            scan_results.get("technical_analysis", "")
+            or scan_results.get("executive_summary", "")
+            or ""
+        )
+        # Try to extract a finding count from the narrative
+        import re as _re
+        _count_match = _re.search(
+            r"(\d+)\s+vulnerability\s+(categor|class|type|finding)",
+            narrative_text,
+            _re.IGNORECASE,
+        )
+        if _count_match:
+            _narrative_count = int(_count_match.group(1))
+            stats_text.append("Vulnerabilities  ", style="bold #f59e0b")
+            stats_text.append(str(_narrative_count), style="bold white")
+            stats_text.append(
+                f" (from narrative report — {vuln_count} individually tracked)",
+                style="dim yellow",
+            )
+        else:
+            stats_text.append("Vulnerabilities  ", style="bold #22c55e")
+            stats_text.append("0", style="bold white")
+            stats_text.append(" (No exploitable vulnerabilities detected)", style="dim green")
         stats_text.append("\n")
 
 

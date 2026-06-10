@@ -21,6 +21,16 @@ class TuiLiveView:
         self._next_event_id = 1
         self._open_assistant_event_by_agent: dict[str, dict[str, Any]] = {}
         self._tool_event_by_call_id: dict[str, dict[str, Any]] = {}
+        self.system_messages: list[dict[str, Any]] = []
+
+    def add_system_message(self, message: str) -> None:
+        self.system_messages.append({
+            "message": message,
+            "timestamp": datetime.now(UTC).isoformat(),
+        })
+        # Keep only the last 50 messages to avoid unbounded growth
+        if len(self.system_messages) > 50:
+            self.system_messages = self.system_messages[-30:]
 
     def hydrate_from_run_dir(self, run_dir: Path) -> None:
         state_dir = runtime_state_dir(run_dir)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -12,6 +13,65 @@ from agents import RunContextWrapper, function_tool
 
 
 logger = logging.getLogger(__name__)
+
+# Retry guard: prevent the agent from filing the same finding more than
+# MAX_RETRIES times.  Keyed by (title_hash, endpoint).
+_MAX_RETRIES = 3
+_retry_counters: dict[str, int] = {}
+
+
+def _check_retry_guard(title: str, endpoint: str) -> str | None:
+    """Increment retry counter; return error message if exceeded."""
+    key = hashlib.sha256(f"{title}||{endpoint}".encode()).hexdigest()[:16]
+    count = _retry_counters.get(key, 0) + 1
+    _retry_counters[key] = count
+    if count > _MAX_RETRIES:
+        return (
+            f"RETRY LIMIT EXCEEDED: You have attempted to file '{title}' "
+            f"{count} times.  Stop retrying.  Either fix the validation issues, "
+            f"change your approach, or move on to other findings."
+        )
+    if count > 1:
+        logger.warning(
+            "Retry %d/%d for '%s' on %s — will block at %d",
+            count, _MAX_RETRIES, title, endpoint, _MAX_RETRIES + 1,
+        )
+    return None
+
+
+def _detect_bugcrowd_target(target: str) -> bool:
+    """Check if a target is a Bugcrowd program.
+
+    Detection methods:
+    1. Target URL contains bugcrowd.com
+    2. Target is registered in the target registry with platform=bugcrowd
+    """
+    if not target:
+        return False
+    target_lower = target.lower()
+    if "bugcrowd.com" in target_lower:
+        return True
+    # Check target registry
+    try:
+        from prometheus.core.target_registry import TargetRegistry
+        reg = TargetRegistry()
+        from urllib.parse import urlparse
+        parsed = urlparse(target if "://" in target else f"https://{target}")
+        domain = parsed.netloc or parsed.path.split("/")[0]
+        for t in reg.list_targets():
+            if t.get("domain") == domain:
+                config = t.get("target_config") or {}
+                if isinstance(config, str):
+                    import json as _json
+                    try:
+                        config = _json.loads(config)
+                    except Exception:
+                        config = {}
+                if config.get("platform") == "bugcrowd":
+                    return True
+    except Exception:
+        pass
+    return False
 
 
 _CVSS_VALID = {
@@ -164,6 +224,90 @@ _THEORETICAL_PATTERNS = [
 ]
 
 
+def _count_passed_controls(controls: list[dict[str, Any]] | None) -> int:
+    if not controls:
+        return 0
+    return sum(1 for item in controls if item.get("passed") is not False)
+
+
+def _validate_report_control_gate(
+    *,
+    hypothesis_id: str | None,
+    positive_controls: list[dict[str, Any]] | None,
+    negative_controls: list[dict[str, Any]] | None,
+    validation_agent_id: str | None,
+    poc_description: str = "",
+    poc_script_code: str = "",
+) -> list[str]:
+    """Require a validated hypothesis or explicit control evidence.
+
+    When the finding has concrete PoC evidence (curl commands, script code,
+    HTTP request/response dumps), the control gate defers to the later
+    PoC validation step instead of blocking early.
+    """
+
+    if hypothesis_id:
+        try:
+            from prometheus.core.hypotheses import get_active_hypothesis_manager
+
+            manager = get_active_hypothesis_manager()
+            if manager is None:
+                return [
+                    "REPORT VALIDATION GATE BLOCKED: hypothesis_id was provided but "
+                    "the active HypothesisManager is not initialized."
+                ]
+            gate = manager.report_gate(hypothesis_id)
+        except Exception as exc:
+            return [f"REPORT VALIDATION GATE BLOCKED: could not verify hypothesis_id: {exc}"]
+        if not gate.allowed:
+            return [
+                "REPORT VALIDATION GATE BLOCKED: hypothesis_id must reference a validated hypothesis. "
+                f"Status={gate.status}; missing={', '.join(gate.missing)}"
+            ]
+        return []
+
+    errors: list[str] = []
+    positives = _count_passed_controls(positive_controls)
+    negatives = _count_passed_controls(negative_controls)
+
+    # If the PoC contains concrete exploit code, defer to PoC validation
+    # instead of requiring hypothesis/controls up front.
+    _poc_text = f"{poc_description or ''} {poc_script_code or ''}".lower()
+    _has_concrete_poc = any(
+        keyword in _poc_text
+        for keyword in [
+            "curl ", "wget ", "python ", "import requests", "fetch(",
+            "http", "POST ", "GET ", "Authorization:", "Content-Type:",
+            "<script", "alert(", "onerror=", "document.cookie",
+            "response", "request", "payload",
+        ]
+    )
+
+    if _has_concrete_poc:
+        # Defer to PoC validation — the finding has executable evidence.
+        # Only require the validation agent if controls are completely absent.
+        if positives == 0 and negatives == 0 and not validation_agent_id:
+            errors.append(
+                "CONTROL GATE SOFT BLOCK: no hypothesis or controls provided. "
+                "Concrete PoC detected — will rely on PoC validation and live verification. "
+                "Consider spawning a validation sub-agent for independent confirmation."
+            )
+        return []  # Soft block — let PoC validation decide
+
+    if positives < 2 or negatives < 1:
+        errors.append(
+            "REPORT VALIDATION GATE BLOCKED: provide a validated hypothesis_id or explicit "
+            "control evidence. Required: at least two passed positive controls and one passed "
+            f"negative control. Got positive_controls={positives}, negative_controls={negatives}."
+        )
+    if not validation_agent_id:
+        errors.append(
+            "REPORT VALIDATION GATE BLOCKED: validation_agent_id is required unless a "
+            "validated hypothesis_id is supplied. Independent validation must be attached."
+        )
+    return errors
+
+
 async def _do_create(  # noqa: PLR0912
     *,
     title: str,
@@ -180,9 +324,18 @@ async def _do_create(  # noqa: PLR0912
     cve: str | None,
     cwe: str | None,
     code_locations: list[dict[str, Any]] | None,
+    hypothesis_id: str | None = None,
+    positive_controls: list[dict[str, Any]] | None = None,
+    negative_controls: list[dict[str, Any]] | None = None,
+    validation_agent_id: str | None = None,
     agent_id: str | None = None,
     agent_name: str | None = None,
 ) -> dict[str, Any]:
+    # Retry guard: prevent the agent from filing the same finding >3 times
+    retry_error = _check_retry_guard(title, endpoint or "")
+    if retry_error:
+        return {"success": False, "error": retry_error, "title": title}
+
     errors: list[str] = []
     fields = {
         "title": title,
@@ -197,6 +350,17 @@ async def _do_create(  # noqa: PLR0912
     for name, msg in _REQUIRED_FIELDS.items():
         if not str(fields.get(name) or "").strip():
             errors.append(msg)
+
+    errors.extend(
+        _validate_report_control_gate(
+            hypothesis_id=hypothesis_id,
+            positive_controls=positive_controls,
+            negative_controls=negative_controls,
+            validation_agent_id=validation_agent_id,
+            poc_description=poc_description or "",
+            poc_script_code=poc_script_code or "",
+        ),
+    )
 
     # BLOCK test/placeholder content — the LLM sometimes generates filler text
     # to pass minimum character requirements instead of real findings
@@ -370,6 +534,73 @@ async def _do_create(  # noqa: PLR0912
                 "HackerOne programs reject header-only findings as 'Not Applicable', damaging your reputation."
             )
 
+    # VERSION DISCLOSURE / FINGERPRINTING GUARD: block findings that only
+    # disclose technology versions without demonstrating an exploitable vulnerability.
+    # "Server header reveals nginx/1.24.0" is reconnaissance, not a vuln.
+    _version_disclosure_patterns = [
+        "version.*disclos",
+        "banner.*disclos",
+        "nginx.*version",
+        "apache.*version",
+        "server.*header.*reveal",
+        "x-powered-by",
+        "technology.*fingerprint",
+        "framework.*version.*detect",
+        "version.*information",
+        "disclos.*version",
+    ]
+    _is_version_disclosure = any(
+        re.search(pat, title_lower) for pat in _version_disclosure_patterns
+    )
+    if not _is_version_disclosure:
+        _is_version_disclosure = any(
+            re.search(pat, _all_text_lower) for pat in _version_disclosure_patterns
+        )
+
+    if _is_version_disclosure:
+        # Require exploitation of a specific CVE, not just version observation
+        _exploit_indicators_version = [
+            "exploit.*cve", "cve.*exploit", "metasploit", "exploit-db",
+            "poc.*exploit", "used.*to.*gain.*access", "rce.*confirmed",
+            "shell.*obtained", "code.*execution", "command.*execution",
+            "sql.*injection.*confirmed", "xss.*confirmed",
+            "successfully.*exploited.*version",
+            "executed.*payload", "reverse.*shell",
+        ]
+        # Filter out negations — "no known CVEs are exploitable" is NOT exploitation evidence
+        _negation_patterns = [
+            "no.*known.*cve", "no.*critical.*cve", "not.*exploitable",
+            "was.*not.*exploit", "could not.*exploit", "unable.*to.*exploit",
+            "no.*exploitation", "no.*active.*exploit",
+        ]
+        _has_version_exploit = any(
+            re.search(ind, _all_text_lower) for ind in _exploit_indicators_version
+        )
+        if _has_version_exploit:
+            # Check if the exploit indicators appear in negated context
+            for neg in _negation_patterns:
+                # If a negation overlaps with any exploit indicator match, cancel it
+                neg_match = re.search(neg, _all_text_lower)
+                if neg_match:
+                    for ind in _exploit_indicators_version:
+                        exp_match = re.search(ind, _all_text_lower)
+                        if exp_match and abs(exp_match.start() - neg_match.start()) < 200:
+                            _has_version_exploit = False
+                            break
+                if not _has_version_exploit:
+                    break
+        if not _has_version_exploit:
+            errors.append(
+                "VERSION DISCLOSURE BLOCKED: This finding discloses a technology version "
+                "but does NOT demonstrate exploiting a specific vulnerability in that version. "
+                "Version disclosure is reconnaissance, not a vulnerability. "
+                "To fix: (1) Identify a specific CVE in the disclosed version. "
+                "(2) Build and execute a working PoC that exploits that CVE against the target. "
+                "(3) Include HTTP request/response evidence of successful exploitation. "
+                "Simply observing a version string in a response header is NOT reportable. "
+                "HackerOne programs close version disclosure reports as 'Informational' or 'Not Applicable'."
+            )
+
     # OBSERVATION VS EXPLOITATION GUARD: reject findings where the PoC only
     # shows a misconfiguration EXISTS but doesn't demonstrate it ENABLES an attack.
     # "The CORS header reflects any origin" is observation.
@@ -400,6 +631,15 @@ async def _do_create(  # noqa: PLR0912
     ]
     for misconfig_keyword, required_exploit_evidence in _observation_patterns:
         if re.search(misconfig_keyword, title_lower) or re.search(misconfig_keyword, desc_text_early):
+            # Skip observation-only gate for XSS/script-injection findings —
+            # these are inherently exploitable, not just configuration observations
+            if misconfig_keyword == "reflect" and (
+                "xss" in title_lower or "cross-site" in title_lower
+                or "script" in title_lower or "javascript" in title_lower
+                or "injection" in title_lower
+                or "xss" in desc_text_early or "script" in desc_text_early
+            ):
+                continue
             _all_poc_text = f"{poc_desc.lower()} {poc_code.lower()} {technical_analysis.lower()}"
             has_exploit_evidence = any(
                 re.search(ev, _all_poc_text) for ev in required_exploit_evidence
@@ -511,8 +751,8 @@ async def _do_create(  # noqa: PLR0912
 
     if not isinstance(cvss_breakdown, dict) or not cvss_breakdown:
         errors.append("REJECTED: cvss_breakdown must be a JSON object with all 8 CVSS v3.1 metrics. "
-                      "Example: {\"attack_vector\":\"N\",\"attack_complexity\":\"L\",\"privileges_required\":\"N\","
-                      "\"user_interaction\":\"N\",\"scope\":\"U\",\"confidentiality\":\"H\",\"integrity\":\"H\",\"availability\":\"H\"}")
+                      'Example: {"attack_vector":"N","attack_complexity":"L","privileges_required":"N",'
+                      '"user_interaction":"N","scope":"U","confidentiality":"H","integrity":"H","availability":"H"}')
         cvss_breakdown = {}
     else:
         for name, valid in _CVSS_VALID.items():
@@ -562,24 +802,25 @@ async def _do_create(  # noqa: PLR0912
             "poc_script_code": poc_script_code,
             "description": description,
             "impact": impact,
-        }, execute_poc=False)  # Don't execute PoC here, just analyze text
-        
-        if poc_validation["verdict"] == "informational":
+        }, execute_poc=True, timeout=30)  # Execute PoC: reports require working proof, not text-only claims
+
+        if poc_validation["verdict"] != "exploitable" or not poc_validation.get("reportable"):
             return {
                 "success": False,
                 "error": (
-                    f"REJECTED: Finding '{title}' classified as INFORMATIONAL by PoC validation.\n"
+                    f"REJECTED: Finding '{title}' did not produce a working exploitable PoC.\n"
+                    f"  Verdict: {poc_validation['verdict']}\n"
                     f"  Reason: {poc_validation['reason']}\n"
                     f"  Missing: {poc_validation['missing']}\n"
-                    f"  This finding describes reconnaissance/observation, not exploitation.\n"
-                    f"  To make this reportable: demonstrate actual exploitation using the discovered information.\n"
-                    f"  Recommendations:\n"
-                    + "\n".join(f"    - {r}" for r in poc_validation.get("recommendations", []))
+                    f"  Evidence: {str(poc_validation.get('evidence', ''))[:500]}\n"
+                    f"  Prometheus is a validator. Do not file until the PoC proves real security impact."
                 ),
                 "title": title,
                 "poc_validation_verdict": poc_validation["verdict"],
+                "poc_executed": poc_validation.get("poc_executed"),
+                "poc_successful": poc_validation.get("poc_successful"),
             }
-        
+
         from prometheus.core.validation_judge import validate_finding
         validation_verdict = validate_finding({
             "title": title,
@@ -628,7 +869,104 @@ async def _do_create(  # noqa: PLR0912
     except Exception as exc:
         logger.warning("Validation judge failed (non-fatal, allowing finding): %s", exc)
 
+    # --- LIVE VERIFICATION: confirm the vulnerability exists on the real target ---
+    try:
+        from prometheus.core.live_verification import verify_live
+        live_result = verify_live({
+            "title": title,
+            "target": target,
+            "endpoint": endpoint or "",
+            "description": description,
+            "poc_description": poc_description,
+        })
+        logger.info(
+            "Live verification: verdict=%s verified=%s confidence=%.2f reason=%s",
+            live_result.verdict, live_result.verified,
+            live_result.confidence, live_result.reason[:100],
+        )
+        if live_result.verdict == "contradicted":
+            return {
+                "success": False,
+                "error": (
+                    f"REJECTED: Finding '{title}' CONTRADICTED by live verification.\n"
+                    f"  Reason: {live_result.reason}\n"
+                    f"  Evidence: {live_result.evidence[:300]}\n"
+                    f"  Requests made: {live_result.requests_made}\n"
+                    f"  The target does NOT behave as claimed. This finding is a false positive.\n"
+                    f"  Do not resubmit without re-testing against the live target."
+                ),
+                "title": title,
+                "live_verification": live_result.verdict,
+                "live_evidence": live_result.evidence[:500],
+            }
+        if live_result.verdict == "confirmed":
+            logger.info(
+                "Live verification CONFIRMED: %s (confidence=%.2f, evidence=%s)",
+                title, live_result.confidence, live_result.evidence[:200],
+            )
+        elif live_result.verdict in ("error", "unverifiable"):
+            return {
+                "success": False,
+                "error": (
+                    f"REJECTED: Finding '{title}' was not live-verified.\n"
+                    f"  Verdict: {live_result.verdict}\n"
+                    f"  Reason: {live_result.reason}\n"
+                    f"  Evidence: {live_result.evidence[:300]}\n"
+                    f"  Requests made: {live_result.requests_made}\n"
+                    f"  Prometheus is a validator. Continue testing until the PoC is confirmed on the real target."
+                ),
+                "title": title,
+                "live_verification": live_result.verdict,
+                "live_evidence": live_result.evidence[:500],
+            }
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": (
+                f"REJECTED: Live verification crashed for finding '{title}'.\n"
+                f"  Error: {exc}\n"
+                f"  Fix the PoC or verification path before reporting."
+            ),
+            "title": title,
+            "live_verification": "error",
+        }
+
     cvss_score, severity, _vector = _calculate_cvss(cvss_breakdown)
+
+    # VRT classification for Bugcrowd targets
+    vrt_category: str | None = None
+    vrt_priority: int | None = None
+    _is_bugcrowd = _detect_bugcrowd_target(target)
+    if _is_bugcrowd:
+        try:
+            from prometheus.core.vrt_classifier import get_vrt_classifier
+            vrt = get_vrt_classifier()
+            vrt_result = vrt.classify(
+                title=title,
+                description=description or "",
+                cwe=cwe or "",
+                endpoint=endpoint or "",
+            )
+            vrt_category = vrt_result["vrt_category"]
+            vrt_priority = vrt_result["priority"]
+            logger.info(
+                "Bugcrowd VRT classification: %s (P%s, %s, confidence=%.2f)",
+                vrt_category,
+                vrt_priority,
+                vrt_result["priority_label"],
+                vrt_result["confidence"],
+            )
+            # Warn if CVSS severity and VRT priority disagree significantly
+            _vrt_to_severity = {1: "critical", 2: "high", 3: "medium", 4: "low", 5: "informational"}
+            _expected_severity = _vrt_to_severity.get(vrt_priority, "medium")
+            if severity != _expected_severity and vrt_result["confidence"] >= 0.7:
+                logger.warning(
+                    "CVSS severity (%s) disagrees with VRT priority P%s (%s) for '%s'. "
+                    "Consider adjusting CVSS to match VRT classification.",
+                    severity, vrt_priority, _expected_severity, title,
+                )
+        except Exception:
+            logger.debug("VRT classification failed (non-blocking)", exc_info=True)
 
     try:
         from prometheus.report.state import get_global_report_state
@@ -645,12 +983,12 @@ async def _do_create(  # noqa: PLR0912
         # LAYER 1: Knowledge store dedup (fast, deterministic)
         # Check against existing findings in the knowledge store
         # This catches duplicates across scans before hitting the LLM dedup
+        existing_vuln_id: int | None = None
         try:
             from prometheus.tools.knowledge.store import KnowledgeStore
             ks = KnowledgeStore()
             domain = target or ""
             if domain:
-                # Extract domain from URL if needed
                 from urllib.parse import urlparse
                 parsed = urlparse(domain if "://" in domain else f"https://{domain}")
                 domain = parsed.netloc or parsed.path.split("/")[0]
@@ -663,20 +1001,7 @@ async def _do_create(  # noqa: PLR0912
                 )
                 if dup_check:
                     existing = dup_check["finding"]
-                    layer = dup_check["layer"]
-                    return {
-                        "success": False,
-                        "error": (
-                            f"DUPLICATE DETECTED ({layer}): '{existing.get('finding_title', 'Unknown')}' "
-                            f"already tracked for {domain} with status '{existing.get('status', 'unknown')}'. "
-                            f"Use get_report_details to see the existing finding. "
-                            f"If this is a NEW vulnerability on a DIFFERENT endpoint, provide the exact endpoint."
-                        ),
-                        "duplicate_of": existing.get("id"),
-                        "duplicate_title": existing.get("finding_title"),
-                        "duplicate_status": existing.get("status"),
-                        "dedup_layer": layer,
-                    }
+                    existing_vuln_id = existing.get("id")
         except Exception as exc:
             logger.debug("Knowledge store dedup check failed (non-blocking): %s", exc)
 
@@ -697,22 +1022,80 @@ async def _do_create(  # noqa: PLR0912
         }
         dedupe = await check_duplicate(candidate, existing)
         if dedupe.get("is_duplicate"):
-            duplicate_id = dedupe.get("duplicate_id", "")
-            duplicate_title = next(
-                (r.get("title", "Unknown") for r in existing if r.get("id") == duplicate_id),
-                "",
-            )
-            return {
-                "success": False,
-                "error": (
-                    f"Potential duplicate of '{duplicate_title}' "
-                    f"(id={duplicate_id[:8]}...) — do not re-report the same vulnerability"
-                ),
-                "duplicate_of": duplicate_id,
-                "duplicate_title": duplicate_title,
-                "confidence": dedupe.get("confidence", 0.0),
-                "reason": dedupe.get("reason", ""),
-            }
+            existing_vuln_id = dedupe.get("duplicate_id")
+            if not existing_vuln_id:
+                existing_vuln_id = next(
+                    (r.get("id") for r in existing if r.get("id") == dedupe.get("duplicate_id")),
+                    None,
+                )
+
+        # --- TIMELINE UPDATE instead of reject ---
+        # When a rescan finds the same vuln, update the existing report with
+        # a new timeline entry rather than creating a duplicate or rejecting.
+        if existing_vuln_id is not None:
+            try:
+                from prometheus.core.scan_persistence import ScanPersistence
+                from datetime import UTC, datetime
+
+                sp = ScanPersistence()
+                now_ts = datetime.now(UTC).isoformat()
+
+                # Add a timeline comment with new scan evidence
+                timeline_entry = (
+                    f"=== Rescan verification [{now_ts[:19]}] ===\n"
+                    f"Re-verified by scan: {getattr(report_state, 'run_name', 'unknown')}\n"
+                    f"Status: revalidated (still present)\n"
+                    f"Technique: {method or 'N/A'}\n"
+                    f"Endpoint: {endpoint or target}\n"
+                    f"New PoC evidence added with updated details."
+                )
+                # Insert into finding_comments
+                db_path = getattr(sp, '_db_path', None)
+                if db_path:
+                    import sqlite3 as _sqlite3
+                    _conn = _sqlite3.connect(str(db_path))
+                    _conn.execute(
+                        "INSERT INTO finding_comments (finding_id, comment_type, content, version, created_at) "
+                        "VALUES (?, ?, ?, "
+                        "(SELECT COALESCE(MAX(version), 0) + 1 FROM finding_comments WHERE finding_id = ?), ?)",
+                        (existing_vuln_id, "verification", timeline_entry, existing_vuln_id, now_ts),
+                    )
+                    # Update report status
+                    _conn.execute(
+                        "UPDATE report_status SET status = 'revalidated', last_verified_at = ?, "
+                        "updated_at = ?, notes = COALESCE(notes || '\n---\n', '') || ? "
+                        "WHERE id = ?",
+                        (now_ts, now_ts,
+                         f"[{now_ts[:19]}] Revalidated by scan {getattr(report_state, 'run_name', 'unknown')}: {title}",
+                         existing_vuln_id),
+                    )
+                    _conn.commit()
+                    _conn.close()
+                    logger.info(
+                        "Timeline updated for existing finding %d: revalidated by scan %s",
+                        existing_vuln_id, getattr(report_state, 'run_name', 'unknown'),
+                    )
+                return {
+                    "success": True,
+                    "message": (
+                        f"REVALIDATED — '{title}' (id={existing_vuln_id}) was already tracked. "
+                        f"Added new timeline entry with this scan's verification data. "
+                        f"Status updated to revalidated."
+                    ),
+                    "existing_id": existing_vuln_id,
+                    "action": "revalidated",
+                }
+            except Exception as timeline_err:
+                logger.exception("Failed to update timeline for existing finding %d", existing_vuln_id)
+                return {
+                    "success": False,
+                    "error": (
+                        f"DUPLICATE DETECTED: finding id={existing_vuln_id} already exists, "
+                        f"but timeline update failed: {timeline_err}. "
+                        f"Does your new finding target a DIFFERENT endpoint?"
+                    ),
+                    "duplicate_of": existing_vuln_id,
+                }
 
         report_id = report_state.add_vulnerability_report(
             title=title,
@@ -738,6 +1121,7 @@ async def _do_create(  # noqa: PLR0912
         # Immediately sync to report_status so the Reports tab shows it in real time
         try:
             import json as _json
+
             from prometheus.tools.knowledge.store import KnowledgeStore as _KS
             _ks = _KS()
             _domain = target or ""
@@ -765,6 +1149,9 @@ async def _do_create(  # noqa: PLR0912
                 "cwe": cwe,
                 "code_locations": parsed_locations,
             }
+            if vrt_category:
+                _finding_snapshot["vrt_category"] = vrt_category
+                _finding_snapshot["vrt_priority"] = vrt_priority
             _snapshot_json = _json.dumps(_finding_snapshot, default=str, ensure_ascii=False)
             _ks.upsert_report_status(
                 domain=_domain,
@@ -777,7 +1164,21 @@ async def _do_create(  # noqa: PLR0912
                 cwe=cwe,
                 full_finding_json=_snapshot_json,
             )
-            logger.info("Synced finding '%s' to report_status in real time", title)
+            try:
+                from prometheus.core.candidate_store import CandidateStore as _CandidateStore
+
+                _candidate_snapshot = dict(_finding_snapshot)
+                _candidate_snapshot["fingerprint"] = _ks._finding_hash(title, endpoint or "")
+                _CandidateStore().ingest_raw_finding(
+                    _candidate_snapshot,
+                    domain=_domain,
+                    scan_id=report_state.run_id,
+                    source_tool="reporting_tool",
+                    source_type="agent_report",
+                )
+            except Exception:
+                logger.warning("Canonical candidate sync failed for '%s' (non-critical)", title, exc_info=True)
+            logger.info("Synced finding '%s' to report_status and finding_candidates in real time", title)
         except Exception as exc:
             logger.debug("Real-time report_status sync failed (non-blocking): %s", exc)
     except (ImportError, AttributeError) as e:
@@ -791,13 +1192,17 @@ async def _do_create(  # noqa: PLR0912
             cvss_score,
             title,
         )
-        return {
+        result = {
             "success": True,
             "message": f"Vulnerability report '{title}' created successfully",
             "report_id": report_id,
             "severity": severity,
             "cvss_score": cvss_score,
         }
+        if vrt_category and vrt_priority is not None:
+            result["vrt_category"] = vrt_category
+            result["vrt_priority"] = vrt_priority
+        return result
 
 
 @function_tool(timeout=180, strict_mode=False)
@@ -817,6 +1222,10 @@ async def create_vulnerability_report(
     cve: str | None = None,
     cwe: str | None = None,
     code_locations: list[dict[str, Any]] | None = None,
+    hypothesis_id: str | None = None,
+    positive_controls: list[dict[str, Any]] | None = None,
+    negative_controls: list[dict[str, Any]] | None = None,
+    validation_agent_id: str | None = None,
 ) -> str:
     """File a vulnerability report — one report per fully-verified finding.
 
@@ -995,6 +1404,17 @@ async def create_vulnerability_report(
         cve: ``CVE-YYYY-NNNNN`` if certain, else omit.
         cwe: ``CWE-NNN`` (most specific child) if certain, else omit.
         code_locations: White-box findings — list of location objects.
+        hypothesis_id: Preferred validation handle from create_hypothesis.
+            If provided, it must reference a validated hypothesis with at
+            least two passed positive controls and one passed negative control.
+        positive_controls: Explicit positive validation evidence when a
+            hypothesis_id is not available. At least two passed controls are
+            required.
+        negative_controls: Explicit negative validation evidence when a
+            hypothesis_id is not available. At least one passed control is
+            required.
+        validation_agent_id: Independent validation agent that verified the
+            finding when explicit controls are supplied.
 
             **How ``fix_before`` / ``fix_after`` work**: they're used as
             literal GitHub/GitLab PR suggestion blocks. When a reviewer
@@ -1058,6 +1478,7 @@ async def create_vulnerability_report(
               that aren't part of the fix.
             - Duplicating the same change across multiple locations.
     """
+    logger.debug("create_vulnerability_report: title=%s target=%s endpoint=%s", title[:60], target, endpoint)
     inner = ctx.context if isinstance(ctx.context, dict) else {}
     raw_agent_id = inner.get("agent_id")
     agent_id = raw_agent_id if isinstance(raw_agent_id, str) else None
@@ -1084,6 +1505,10 @@ async def create_vulnerability_report(
         cve=cve,
         cwe=cwe,
         code_locations=code_locations,
+        hypothesis_id=hypothesis_id,
+        positive_controls=positive_controls,
+        negative_controls=negative_controls,
+        validation_agent_id=validation_agent_id,
         agent_id=agent_id,
         agent_name=agent_name,
     )

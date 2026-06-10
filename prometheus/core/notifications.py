@@ -11,9 +11,10 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
+
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class ScanNotifications:
     instance per process.
     """
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> ScanNotifications:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance
@@ -77,7 +78,7 @@ class ScanNotifications:
     def notify_finding(self, finding_data: dict[str, Any]) -> None:
         """Write a finding to the global findings file and status log."""
         finding_data = dict(finding_data)  # defensive copy
-        finding_data.setdefault("ts", datetime.now(timezone.utc).isoformat())
+        finding_data.setdefault("ts", datetime.now(UTC).isoformat())
 
         with self._lock:
             self._write_finding(finding_data)
@@ -112,7 +113,7 @@ class ScanNotifications:
         """Append an event to ~/.prometheus/comms/global/status.jsonl."""
         path = _COMMS_GLOBAL / "status.jsonl"
         entry = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "type": event_type,
             "data": data,
         }
@@ -126,11 +127,9 @@ class ScanNotifications:
         """Append a finding to ~/.prometheus/comms/global/findings.json."""
         path = _COMMS_GLOBAL / "findings.json"
         try:
-            if path.exists():
-                findings = json.loads(path.read_text(encoding="utf-8"))
-            else:
-                findings = []
+            findings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
         except (json.JSONDecodeError, OSError):
+            logger.debug("_write_finding: could not read findings file; starting fresh", exc_info=True)
             findings = []
 
         findings.append(finding)

@@ -1,4 +1,4 @@
-# Python
+# ── Python ──────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -20,7 +20,7 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
+# ── Virtual Environments ────────────────────────────────────────────────
 venv/
 env/
 ENV/
@@ -29,29 +29,43 @@ ENV/
 pip-log.txt
 pip-delete-this-directory.txt
 
-# IDE
+# ── IDE / Editor ────────────────────────────────────────────────────────
 .idea/
 .vscode/
 *.swp
 *.swo
-.DS_Store
+*.swn
 .project
 .pydevproject
 .settings/
+.netlify/
 
-# FastAPI
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# ── OS ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.directory
+Desktop.ini
 
-# MongoDB
-data/
-mongod.log
-*.mongodb
-*.mongorc.js
+# ── Auth / Secrets / Credentials ────────────────────────────────────────
+.env
+.env.*
+*.key
+*.pem
+*.cert
+*.crt
+*.jks
+*.pfx
+*.p12
+*.keystore
+auth.json
+*.auth
+credentials.json
+credentials*.json
+secrets/
+secret/
+service-account*.json
 
-# LLM and ML related
+# ── LLM / ML artifacts ──────────────────────────────────────────────────
 *.bin
 *.pt
 *.pth
@@ -66,22 +80,82 @@ checkpoints/
 logs/
 tensorboard/
 
-# Agent execution traces
-strix_runs/
+# ── Prometheus scan output ──────────────────────────────────────────────
+prometheus_runs/
 agent_runs/
+results/
+output/
+scan_output/
+reports/
+evidence/
+screenshots/
+*.html
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.har
+*.pcap
 
-# Misc
-*.log
-*.sqlite
+# ── Databases ───────────────────────────────────────────────────────────
 *.db
-.directory
+*.sqlite
+*.sqlite3
+*.db-bak
+*.db.bak
 *.bak
+*.sql
+*.dump
+*.dump.gz
+
+# ── Logs / Temp ─────────────────────────────────────────────────────────
+*.log
 *.tmp
 *.temp
-.DS_Store
-Thumbs.db
+*.cache
+*.pid
+*.lock
+*.swp
+*.swo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
+# ── Docker ──────────────────────────────────────────────────────────────
+.docker/
+docker-compose.override.yml
+*.tar
+*.tar.gz
+*.tgz
+
+# ── Lint / Test caches ──────────────────────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.coverage
+.coverage.*
+coverage/
+htmlcov/
+.coverage.*
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.tox/
+
+# ── OS / File system artifacts ──────────────────────────────────────────
+.directory
+.fuse_hidden*
+.crdownload
+
+# ── GraphQL schemas ─────────────────────────────────────────────────────
 *.schema.graphql
 schema.graphql
 
+# ── Other tools ─────────────────────────────────────────────────────────
 .opencode/
+.claude/
+.cursor/

@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-import asyncio
 import csv
 import gzip
 import io
-import json
 import logging
 import subprocess
 import time
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from prometheus.tools.threat_intel.local_db import ThreatIntelDB
+
+if TYPE_CHECKING:
+    from prometheus.tools.threat_intel.local_db import ThreatIntelDB
+
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,11 @@ ECOSYSTEM_MAP = {
     "nuget": "nuget", ".net": "nuget", "csharp": "nuget",
     "swift": "swift", "cocoapods": "cocoapods",
     "pub": "pub", "dart": "pub",
+    # Infrastructure / proxy / CDN
+    "cloudflare": "npm", "vercel": "npm", "envoy": "go", "nginx": "go",
+    "apache": "maven", "redis": "go", "postgresql": "go", "mysql": "maven",
+    "elasticsearch": "maven", "kubernetes": "go", "docker": "go",
+    "istio": "go", "consul": "go", "vault": "go", "terraform": "go",
 }
 
 
@@ -118,7 +124,7 @@ def ingest_epss(db: ThreatIntelDB) -> dict[str, Any]:
     except Exception as exc:
         duration = time.time() - start
         db.update_feed_status("epss", "error", error_message=str(exc), duration_seconds=duration)
-        logger.error("EPSS ingestion failed: %s", exc)
+        logger.exception("EPSS ingestion failed: %s", exc)
         return {"status": "error", "error": str(exc), "duration": duration}
 
 
@@ -168,7 +174,7 @@ def ingest_cisa_kev(db: ThreatIntelDB) -> dict[str, Any]:
     except Exception as exc:
         duration = time.time() - start
         db.update_feed_status("cisa_kev", "error", error_message=str(exc), duration_seconds=duration)
-        logger.error("CISA KEV ingestion failed: %s", exc)
+        logger.exception("CISA KEV ingestion failed: %s", exc)
         return {"status": "error", "error": str(exc), "duration": duration}
 
 
@@ -182,7 +188,7 @@ def ingest_nvd_recent(db: ThreatIntelDB, days: int = 7) -> dict[str, Any]:
     count = 0
     try:
         from datetime import timedelta
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start_date = end - timedelta(days=days)
         fmt = "%Y-%m-%dT%H:%M:%S.000"
 
@@ -258,7 +264,7 @@ def ingest_nvd_recent(db: ThreatIntelDB, days: int = 7) -> dict[str, Any]:
     except Exception as exc:
         duration = time.time() - start
         db.update_feed_status("nvd_recent", "error", error_message=str(exc), duration_seconds=duration)
-        logger.error("NVD recent ingestion failed: %s", exc)
+        logger.exception("NVD recent ingestion failed: %s", exc)
         return {"status": "error", "error": str(exc), "duration": duration}
 
 
@@ -331,10 +337,7 @@ def ingest_ghsa_bulk(db: ThreatIntelDB) -> dict[str, Any]:
                             # Store affected packages
                             for vuln in adv.get("vulnerabilities", []):
                                 pkg = vuln.get("package", {})
-                                if isinstance(pkg, dict):
-                                    pkg_name = pkg.get("name", "")
-                                else:
-                                    pkg_name = ""
+                                pkg_name = pkg.get("name", "") if isinstance(pkg, dict) else ""
                                 if pkg_name:
                                     patched = vuln.get("first_patched_version", "")
                                     # REST API returns string, not dict
@@ -368,7 +371,7 @@ def ingest_ghsa_bulk(db: ThreatIntelDB) -> dict[str, Any]:
     except Exception as exc:
         duration = time.time() - start
         db.update_feed_status("ghsa_bulk", "error", error_message=str(exc), duration_seconds=duration)
-        logger.error("GHSA bulk ingestion failed: %s", exc)
+        logger.exception("GHSA bulk ingestion failed: %s", exc)
         return {"status": "error", "error": str(exc), "duration": duration}
 
 
@@ -377,13 +380,13 @@ def ingest_ghsa_bulk(db: ThreatIntelDB) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def ingest_shodan_recent(db: ThreatIntelDB, days: int = 7) -> dict[str, Any]:
-    """Fetch recent CVEs from Shodan CVEDB."""
+    """Fetch the 1000 most recent CVEs from Shodan CVEDB (https://cvedb.shodan.io/cves)."""
     start = time.time()
     count = 0
     try:
         with httpx.Client(timeout=30.0, follow_redirects=True) as client:
-            # Shodan CVEDB has a /recent endpoint
-            resp = client.get("https://cvedb.shodan.io/cve/recent")
+            # Shodan CVEDB /cves returns the 1000 most recent CVEs
+            resp = client.get("https://cvedb.shodan.io/cves")
             resp.raise_for_status()
             data = resp.json()
 
@@ -425,7 +428,7 @@ def ingest_shodan_recent(db: ThreatIntelDB, days: int = 7) -> dict[str, Any]:
     except Exception as exc:
         duration = time.time() - start
         db.update_feed_status("shodan_recent", "error", error_message=str(exc), duration_seconds=duration)
-        logger.error("Shodan CVEDB ingestion failed: %s", exc)
+        logger.exception("Shodan CVEDB ingestion failed: %s", exc)
         return {"status": "error", "error": str(exc), "duration": duration}
 
 
@@ -434,7 +437,7 @@ def ingest_shodan_recent(db: ThreatIntelDB, days: int = 7) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def ingest_circl_recent(db: ThreatIntelDB) -> dict[str, Any]:
-    """Fetch recent CVEs from CIRCL Vulnerability-Lookup."""
+    """Fetch recent CVEs from CIRCL Vulnerability-Lookup (CVE 5.0 format)."""
     start = time.time()
     count = 0
     try:
@@ -445,26 +448,58 @@ def ingest_circl_recent(db: ThreatIntelDB) -> dict[str, Any]:
 
             items = data if isinstance(data, list) else data.get("vulnerabilities", [])
             for item in items:
-                cve_id = item.get("cve_id") or item.get("id", "")
+                # CVE 5.0 format: cveMetadata.cveId
+                meta = item.get("cveMetadata") or {}
+                cve_id = meta.get("cveId", "")
                 if not cve_id or not cve_id.startswith("CVE-"):
                     continue
 
+                # Extract description from containers.cna.descriptions
+                containers = item.get("containers") or {}
+                cna = containers.get("cna") or {}
+                description = ""
+                for desc in cna.get("descriptions") or []:
+                    if isinstance(desc, dict) and desc.get("lang") == "en":
+                        description = desc.get("value", "")[:500]
+                        break
+                if not description:
+                    for desc in cna.get("descriptions") or []:
+                        if isinstance(desc, dict):
+                            description = desc.get("value", "")[:500]
+                            break
+
+                # Extract CVSS from metrics
                 cvss = 0.0
                 sev = ""
-                # Try to extract CVSS from various fields
-                for metric in item.get("metrics", []):
-                    if isinstance(metric, dict):
-                        cvss = metric.get("score", 0.0) or cvss
-                        sev = metric.get("severity", "") or sev
+                for metric in cna.get("metrics") or []:
+                    if not isinstance(metric, dict):
+                        continue
+                    # Try CVSS v4.0, then v3.1, then v3.0
+                    for version_key in ("cvssV4_0", "cvssV3_1", "cvssV3_0", "cvssV2_0"):
+                        cvss_data = metric.get(version_key)
+                        if isinstance(cvss_data, dict):
+                            cvss = float(cvss_data.get("baseScore", 0.0) or 0.0)
+                            sev = str(cvss_data.get("baseSeverity", "") or "")
+                            break
+                    if cvss > 0:
+                        break
 
                 db.upsert_cve(
                     cve_id=cve_id,
-                    description=item.get("summary", "")[:500],
-                    severity=sev.upper(),
+                    description=description,
+                    severity=sev.upper() if sev else "",
                     cvss_score=cvss,
-                    published_at=item.get("published", ""),
+                    published_at=meta.get("datePublished", ""),
                     sources=["CIRCL"],
                 )
+
+                # Extract references from containers.cna.references
+                for ref in cna.get("references") or []:
+                    if isinstance(ref, dict):
+                        ref_url = ref.get("url", "")
+                        if ref_url:
+                            db.upsert_reference(cve_id, ref_url, _classify_ref(ref_url))
+
                 count += 1
 
         db.commit()
@@ -476,7 +511,7 @@ def ingest_circl_recent(db: ThreatIntelDB) -> dict[str, Any]:
     except Exception as exc:
         duration = time.time() - start
         db.update_feed_status("circl_recent", "error", error_message=str(exc), duration_seconds=duration)
-        logger.error("CIRCL ingestion failed: %s", exc)
+        logger.exception("CIRCL ingestion failed: %s", exc)
         return {"status": "error", "error": str(exc), "duration": duration}
 
 
@@ -517,7 +552,7 @@ def ingest_cisa_advisories(db: ThreatIntelDB) -> dict[str, Any]:
     except Exception as exc:
         duration = time.time() - start
         db.update_feed_status("cisa_advisories", "error", error_message=str(exc), duration_seconds=duration)
-        logger.error("CISA Advisories ingestion failed: %s", exc)
+        logger.exception("CISA Advisories ingestion failed: %s", exc)
         return {"status": "error", "error": str(exc), "duration": duration}
 
 
@@ -555,7 +590,7 @@ def ingest_exploitdb(db: ThreatIntelDB) -> dict[str, Any]:
             if not os.path.isfile(csv_path):
                 continue
             try:
-                with open(csv_path, "r", encoding="utf-8", errors="replace") as f:
+                with open(csv_path, encoding="utf-8", errors="replace") as f:
                     reader = csv.reader(f)
                     header = next(reader, None)
                     if not header:
@@ -603,7 +638,7 @@ def ingest_exploitdb(db: ThreatIntelDB) -> dict[str, Any]:
     except Exception as exc:
         duration = time.time() - start
         db.update_feed_status("exploitdb", "error", error_message=str(exc), duration_seconds=duration)
-        logger.error("Exploit-DB ingestion failed: %s", exc)
+        logger.exception("Exploit-DB ingestion failed: %s", exc)
         return {"status": "error", "error": str(exc), "duration": duration}
 
 
@@ -679,7 +714,7 @@ def ingest_wordfence(db: ThreatIntelDB) -> dict[str, Any]:
     except Exception as exc:
         duration = time.time() - start
         db.update_feed_status("wordfence", "error", error_message=str(exc), duration_seconds=duration)
-        logger.error("Wordfence ingestion failed: %s", exc)
+        logger.exception("Wordfence ingestion failed: %s", exc)
         return {"status": "error", "error": str(exc), "duration": duration}
 
 
@@ -755,7 +790,7 @@ def ingest_vulners_recent(db: ThreatIntelDB) -> dict[str, Any]:
     except Exception as exc:
         duration = time.time() - start
         db.update_feed_status("vulners", "error", error_message=str(exc), duration_seconds=duration)
-        logger.error("Vulners ingestion failed: %s", exc)
+        logger.exception("Vulners ingestion failed: %s", exc)
         return {"status": "error", "error": str(exc), "duration": duration}
 
 
@@ -763,10 +798,44 @@ def ingest_vulners_recent(db: ThreatIntelDB) -> dict[str, Any]:
 # Master orchestrator
 # ---------------------------------------------------------------------------
 
-def ingest_all(db: ThreatIntelDB) -> dict[str, Any]:
-    """Run all feed ingesters and return summary."""
+def ingest_all(db: ThreatIntelDB, min_intervals: dict[str, int] | None = None) -> dict[str, Any]:
+    """Run all feed ingesters and return summary.
+
+    Skips feeds that were updated recently based on *min_intervals*
+    (seconds). Default intervals: small/fast feeds every hour, large
+    feeds every 6-24 hours.
+    """
     start = time.time()
     results = {}
+    total_records = 0
+    errors = []
+
+    # Default minimum intervals per feed (seconds)
+    if min_intervals is None:
+        min_intervals = {
+            "cisa_kev": 7200,         # 2h — small, fast
+            "nvd_recent": 3600,       # 1h — small (7 days)
+            "ghsa_bulk": 21600,       # 6h — medium
+            "epss": 86400,            # 24h — large (338K records)
+            "shodan_recent": 3600,    # 1h — small (1000 CVEs)
+            "circl_recent": 3600,     # 1h — small (~30 CVEs)
+            "cisa_advisories": 7200,  # 2h — small
+            "exploitdb": 86400,       # 24h — large (30K mappings)
+            "wordfence": 21600,       # 6h — requires API key
+            "vulners": 21600,         # 6h — requires API key
+        }
+
+    # Read feed_status to find recently-updated feeds
+    recent_feeds: set[str] = set()
+    try:
+        for name, interval in min_intervals.items():
+            if name in db.get_feed_freshness(max_age_seconds=interval):
+                recent_feeds.add(name)
+                logger.debug(
+                    "Skipping %s — updated within last %ds", name, interval,
+                )
+    except Exception:
+        pass  # feed_status table might not exist yet
 
     # Order matters: CISA KEV first (marks has_exploit), then EPSS (enriches scores)
     feed_functions = [
@@ -786,6 +855,9 @@ def ingest_all(db: ThreatIntelDB) -> dict[str, Any]:
     errors = []
 
     for name, func in feed_functions:
+        if name in recent_feeds:
+            logger.debug("Skipping %s — recently updated", name)
+            continue
         logger.info("Ingesting %s...", name)
         try:
             result = func(db)
@@ -797,7 +869,7 @@ def ingest_all(db: ThreatIntelDB) -> dict[str, Any]:
         except Exception as exc:
             results[name] = {"status": "error", "error": str(exc)}
             errors.append(f"{name}: {exc}")
-            logger.error("Feed %s crashed: %s", name, exc)
+            logger.exception("Feed %s crashed: %s", name, exc)
 
     duration = time.time() - start
     summary = {

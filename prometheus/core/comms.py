@@ -11,13 +11,15 @@ File layout (created per run):
 
 from __future__ import annotations
 
+import contextlib
 import json
-import os
-import threading
-import time
-from datetime import datetime, timezone
+import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
 
 _COMMS_ROOT = Path.home() / ".prometheus" / "comms"
 _active_run_id: str | None = None
@@ -55,7 +57,7 @@ def write_status(run_id: str, event_type: str, data: dict[str, Any]) -> None:
     """Write a status event for the Hermes agent to read."""
     d = _ensure_dir(run_id)
     entry = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "type": event_type,
         "data": data,
     }
@@ -70,8 +72,9 @@ def write_finding(run_id: str, finding: dict[str, Any]) -> None:
     try:
         findings = json.loads(path.read_text())
     except (json.JSONDecodeError, FileNotFoundError):
+        logger.debug("write_finding: could not read findings file; starting fresh", exc_info=True)
         findings = []
-    finding["ts"] = datetime.now(timezone.utc).isoformat()
+    finding["ts"] = datetime.now(UTC).isoformat()
     findings.append(finding)
     path.write_text(json.dumps(findings, indent=2))
     # Also write to status log
@@ -93,10 +96,8 @@ def read_control(run_id: str, since_line: int = 0) -> list[dict[str, Any]]:
     with open(path) as f:
         for i, line in enumerate(f):
             if i >= since_line and line.strip():
-                try:
+                with contextlib.suppress(json.JSONDecodeError):
                     messages.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
     return messages
 
 
@@ -104,7 +105,7 @@ def send_instruction(run_id: str, instruction: str, action: str = "instruct") ->
     """Hermes agent sends an instruction to prometheus."""
     d = _ensure_dir(run_id)
     entry = {
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
         "action": action,
         "instruction": instruction,
     }
@@ -126,18 +127,14 @@ def get_status_summary(run_id: str) -> dict[str, Any]:
         with open(status_path) as f:
             lines = f.readlines()
             for line in lines[-10:]:
-                try:
+                with contextlib.suppress(json.JSONDecodeError):
                     recent_events.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
 
     # Read findings
     findings = []
     if findings_path.exists():
-        try:
+        with contextlib.suppress(json.JSONDecodeError, FileNotFoundError):
             findings = json.loads(findings_path.read_text())
-        except (json.JSONDecodeError, FileNotFoundError):
-            pass
 
     # Read unread control messages
     control_path = d / "control.jsonl"

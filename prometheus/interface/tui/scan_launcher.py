@@ -2,13 +2,25 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from textual import events
-from textual.app import ComposeResult
-from textual.containers import Grid, Vertical
+from textual.containers import Grid, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Select, TextArea
+from textual.widgets import Button, Label, Select, TextArea
+
+
+if TYPE_CHECKING:
+    from textual import events
+    from textual.app import ComposeResult
+
+
+RATE_LIMIT_OPTIONS = [
+    ("No Limit", 0),
+    ("5 req/s", 5),
+    ("10 req/s", 10),
+    ("20 req/s", 20),
+    ("50 req/s", 50),
+]
 
 
 class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[misc]
@@ -24,13 +36,12 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
     }
 
     #scan_launcher_dialog {
-        grid-size: 1;
-        grid-gutter: 1;
-        padding: 2 3;
+        grid-size: 1 3;
+        grid-rows: auto 1fr auto;
+        padding: 1 3;
         width: 70;
         max-width: 90;
-        height: auto;
-        max-height: 80%;
+        height: 80%;
         border: solid #262626;
         background: #0a0a0a;
     }
@@ -43,7 +54,7 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
     }
 
     #scan_launcher_form {
-        height: auto;
+        height: 1fr;
         background: transparent;
         padding: 0;
     }
@@ -55,7 +66,7 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
     }
 
     #scan_target {
-        height: 4;
+        height: 3;
         background: #1a1a1a;
         color: #d4d4d4;
         border: round #333333;
@@ -89,7 +100,7 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
     }
 
     #scan_instructions {
-        height: 4;
+        height: 3;
         background: #1a1a1a;
         color: #d4d4d4;
         border: round #333333;
@@ -111,7 +122,7 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
     }
 
     #scan_headers {
-        height: 4;
+        height: 3;
         background: #1a1a1a;
         color: #d4d4d4;
         border: round #333333;
@@ -133,11 +144,11 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
     }
 
     #scan_rate_limit {
-        height: 3;
-        background: #1a1a1a;
+        background: transparent;
         color: #d4d4d4;
         border: round #333333;
         margin: 0;
+        min-height: 3;
     }
 
     #scan_rate_limit:focus {
@@ -156,8 +167,8 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
     }
 
     #scan_launcher_buttons Button {
-        height: 1;
-        min-height: 1;
+        height: 3;
+        min-height: 3;
         border: none;
         text-style: bold;
     }
@@ -190,8 +201,8 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
     def compose(self) -> ComposeResult:
         yield Grid(
             Label("🚀 Launch New Scan", id="scan_launcher_title"),
-            Vertical(
-                Label("Target", classes="scan-field-label"),
+            VerticalScroll(
+                Label("Target *", classes="scan-field-label"),
                 TextArea(
                     id="scan_target",
                     placeholder="Enter target URL, domain, IP, or path",
@@ -211,20 +222,20 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
                 Label("Custom Headers", classes="scan-field-label"),
                 TextArea(
                     id="scan_headers",
-                    placeholder="Custom headers, one per line (Key: Value)",
+                    placeholder="Key: Value, one per line (optional)",
                 ),
-                Label("Rate Limit (req/s)", classes="scan-field-label"),
-                Input(
+                Label("Rate Limit", classes="scan-field-label"),
+                Select(
+                    RATE_LIMIT_OPTIONS,
                     id="scan_rate_limit",
-                    value="5",
-                    type="integer",
-                    placeholder="5",
+                    value=5,
+                    allow_blank=False,
                 ),
                 id="scan_launcher_form",
             ),
             Grid(
-                Button("Launch", variant="success", id="launch_scan"),
-                Button("Cancel", variant="default", id="cancel_scan"),
+                Button("[ Ctrl+Enter ] Launch", variant="success", id="launch_scan"),
+                Button("[ Esc ] Cancel", variant="default", id="cancel_scan"),
                 id="scan_launcher_buttons",
             ),
             id="scan_launcher_dialog",
@@ -236,9 +247,12 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
         target.focus()
 
     def on_key(self, event: events.Key) -> None:
-        """Handle key events — ESC to cancel, Enter on buttons to press."""
+        """Handle key events — ESC to cancel, ctrl+enter to launch."""
         if event.key == "escape":
             self.dismiss(None)
+            event.prevent_default()
+        elif event.key == "ctrl+enter":
+            self._do_launch()
             event.prevent_default()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -249,10 +263,9 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
             self.dismiss(None)
 
     def _do_launch(self) -> None:
-        """Validate inputs and dismiss with the scan config dict."""
+        """Validate mandatory fields and dismiss with the scan config dict."""
         target = self.query_one("#scan_target", TextArea).text.strip()
         if not target:
-            # Flash the target field border red to indicate validation error
             self.notify("Target is required", severity="error")
             self.query_one("#scan_target", TextArea).focus()
             return
@@ -260,15 +273,8 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
         scan_mode: str = self.query_one("#scan_mode", Select).value  # type: ignore[assignment]
         instructions = self.query_one("#scan_instructions", TextArea).text.strip()
         headers_text = self.query_one("#scan_headers", TextArea).text.strip()
-        rate_limit_str = self.query_one("#scan_rate_limit", Input).value.strip()
+        rate_limit: int = self.query_one("#scan_rate_limit", Select).value  # type: ignore[assignment]
 
-        # Parse rate limit
-        try:
-            rate_limit = int(rate_limit_str) if rate_limit_str else 5
-        except ValueError:
-            rate_limit = 5
-
-        # Parse custom headers: "Key: Value" per line
         custom_headers: list[dict[str, str]] = []
         if headers_text:
             for line in headers_text.splitlines():

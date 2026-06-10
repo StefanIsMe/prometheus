@@ -7,18 +7,19 @@ filterable by domain, severity, and submission status.
 from __future__ import annotations
 
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from rich.style import Style
 from rich.text import Text
-from textual import events
-from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label, Select, Static, TextArea
 
+
 if TYPE_CHECKING:
+    from textual import events
+    from textual.app import ComposeResult
+
     from prometheus.interface.tui.app import prometheusTUIApp
 
 logger = logging.getLogger(__name__)
@@ -34,22 +35,28 @@ SEVERITY_COLORS: dict[str, str] = {
 
 STATUS_COLORS: dict[str, str] = {
     "new": "#737373",
-    "reviewing": "#3b82f6",
-    "needs_info": "#d97706",
-    "submitted": "#a855f7",
-    "accepted": "#22c55e",
+    "needs_review": "#3b82f6",
+    "validating": "#06b6d4",
+    "verified": "#22c55e",
     "rejected": "#ef4444",
-    "dismissed": "#525252",
+    "archived": "#525252",
+    "ready_to_submit": "#a855f7",
+    "submitted": "#a855f7",
+    "duplicate": "#d97706",
+    "accepted": "#22c55e",
 }
 
 STATUS_LABELS: dict[str, str] = {
     "new": "NEW",
-    "reviewing": "REVIEWING",
-    "needs_info": "NEEDS INFO",
-    "submitted": "SUBMITTED",
-    "accepted": "ACCEPTED",
+    "needs_review": "NEEDS REVIEW",
+    "validating": "VALIDATING",
+    "verified": "VERIFIED",
     "rejected": "REJECTED",
-    "dismissed": "DISMISSED",
+    "archived": "ARCHIVED",
+    "ready_to_submit": "READY TO SUBMIT",
+    "submitted": "SUBMITTED",
+    "duplicate": "DUPLICATE",
+    "accepted": "ACCEPTED",
 }
 
 
@@ -100,6 +107,8 @@ class SubmissionStatusDialog(ModalScreen[dict[str, Any] | None]):  # type: ignor
                 self.finding.get("notes") or "",
                 id="dialog_notes_display",
             ),
+            Label("Reason:", id="dialog_reason_label"),
+            TextArea("", id="dialog_reason_input"),
             Horizontal(
                 Button("Save", variant="primary", id="save_status"),
                 Button("Cancel", variant="default", id="cancel_status"),
@@ -121,22 +130,36 @@ class SubmissionStatusDialog(ModalScreen[dict[str, Any] | None]):  # type: ignor
             try:
                 status_select = self.query_one("#dialog_status_select", Select)
                 platform_select = self.query_one("#dialog_platform_select", Select)
+                reason_input = self.query_one("#dialog_reason_input", TextArea)
 
                 new_status = status_select.value
                 platform = platform_select.value if platform_select.value != Select.NULL else None
+                reason = reason_input.text.strip()
 
-                # Save to DB
+                # Save to canonical DB and keep report_status as projection.
+                from prometheus.core.candidate_store import CandidateStore
                 from prometheus.tools.knowledge.store import KnowledgeStore
 
                 store = KnowledgeStore()
-                store.upsert_report_status(
-                    domain=self.finding.get("domain", ""),
-                    scan_id=self.finding.get("scan_id", "manual"),
-                    finding_title=self.finding.get("finding_title", ""),
-                    status=new_status,
-                    platform=platform,
-                    endpoint=self.finding.get("endpoint"),
-                )
+                candidate_store = CandidateStore()
+                candidate = candidate_store.get_candidate_for_report(self.finding)
+                if candidate:
+                    candidate_store.transition_status(
+                        candidate["id"],
+                        str(new_status),
+                        actor="tui",
+                        reason=reason or None,
+                        payload={"platform": platform},
+                    )
+                else:
+                    store.upsert_report_status(
+                        domain=self.finding.get("domain", ""),
+                        scan_id=self.finding.get("scan_id", "manual"),
+                        finding_title=self.finding.get("finding_title", ""),
+                        status=str(new_status),
+                        platform=platform,
+                        endpoint=self.finding.get("endpoint"),
+                    )
 
                 self.app.notify(f"Status updated to {STATUS_LABELS.get(new_status, new_status)}")
                 self.app.pop_screen()
@@ -406,7 +429,45 @@ class FindingDetailScreen(ModalScreen[None]):  # type: ignore[misc]
             except Exception:
                 text.append("\n  [Could not parse full finding content]\n", style="dim #737373")
 
+        self._append_candidate_evidence_and_artifacts(text, f)
         return text
+
+    def _append_candidate_evidence_and_artifacts(self, text: Text, finding: dict[str, Any]) -> None:
+        try:
+            from prometheus.core.candidate_store import CandidateStore
+
+            store = CandidateStore()
+            candidate = store.get_candidate_for_report(finding)
+            if not candidate:
+                return
+            text.append("\n  ─── Candidate Lifecycle ───\n", style="bold #06b6d4")
+            text.append(f"  Candidate ID: {candidate.get('id')}\n", style="#d4d4d4")
+            text.append(f"  Lifecycle: {candidate.get('lifecycle_status')}\n", style="#d4d4d4")
+            text.append(f"  Fingerprint: {candidate.get('fingerprint')}\n", style="#737373")
+
+            evidence = store.list_evidence(str(candidate.get("id")))
+            text.append("\n  Evidence\n", style="bold #3b82f6")
+            if not evidence:
+                text.append("    No stored evidence yet.\n", style="dim #737373")
+            for item in evidence:
+                text.append(
+                    f"    [{item.get('evidence_kind')}] {item.get('summary') or item.get('id')}\n",
+                    style="#d4d4d4",
+                )
+                if item.get("path"):
+                    text.append(f"      {item.get('path')}\n", style="#737373")
+
+            artifacts = store.list_artifacts(str(candidate.get("id")))
+            text.append("\n  Artifacts\n", style="bold #a855f7")
+            if not artifacts:
+                text.append("    No versioned artifacts yet.\n", style="dim #737373")
+            for artifact in artifacts[:20]:
+                text.append(
+                    f"    v{artifact.get('version')} {artifact.get('platform')} {artifact.get('artifact_type')}: {artifact.get('path')}\n",
+                    style="#d4d4d4",
+                )
+        except Exception:
+            logger.debug("Failed to load candidate evidence/artifacts", exc_info=True)
 
     def _build_timeline_text(self) -> Text:
         """Build the comment timeline for this finding."""
@@ -527,7 +588,7 @@ class FindingDetailScreen(ModalScreen[None]):  # type: ignore[misc]
         f = self.finding
         lines = [
             f"# {f.get('finding_title', 'Unknown')}",
-            f"",
+            "",
             f"**Domain:** {f.get('domain', '')}",
             f"**Severity:** {(f.get('severity') or '').upper()} (CVSS {f.get('cvss') or 'N/A'})",
             f"**Endpoint:** {f.get('endpoint') or 'N/A'}",
@@ -636,7 +697,6 @@ class FindingDetailScreen(ModalScreen[None]):  # type: ignore[misc]
         import json as _json
         import os
         import re
-        from datetime import datetime
 
         finding_id = self.finding.get("id")
         if not finding_id:
@@ -706,8 +766,8 @@ class FindingDetailScreen(ModalScreen[None]):  # type: ignore[misc]
                 lines.append("")
 
             # Write to file
-            safe_title = re.sub(r'[^\w\s-]', '', title)[:50].strip().replace(' ', '_')
-            safe_domain = domain.replace('.', '_')
+            safe_title = re.sub(r"[^\w\s-]", "", title)[:50].strip().replace(" ", "_")
+            safe_domain = domain.replace(".", "_")
             filename = f"{safe_domain}_{safe_title}.md"
 
             export_dir = os.path.expanduser("~/prometheus-source/reports")
@@ -787,7 +847,7 @@ class FindingsLibraryPanel(VerticalScroll):
             self._all_findings = store.list_reports()
             self._populate_domain_filter()
             self._apply_filters()
-        except Exception as exc:
+        except Exception:
             logger.exception("Failed to load findings")
             self._all_findings = []
             self._filtered_findings = []
@@ -800,7 +860,7 @@ class FindingsLibraryPanel(VerticalScroll):
         """Update domain filter dropdown with available domains."""
         try:
             select = self.query_one("#filter_domain", Select)
-            domains = sorted(set(f.get("domain", "") for f in self._all_findings))
+            domains = sorted({f.get("domain", "") for f in self._all_findings})
             options = [("All Domains", "")] + [(d, d) for d in domains if d]
             select.set_options(options)
         except Exception:
@@ -925,7 +985,6 @@ class FindingsLibraryPanel(VerticalScroll):
 
     def action_export_all(self) -> None:
         """Export all filtered findings to a single markdown file."""
-        import json as _json
         import os
         import re
         from datetime import datetime
@@ -939,7 +998,7 @@ class FindingsLibraryPanel(VerticalScroll):
             store = KnowledgeStore()
 
             # Determine domain for filename
-            domains = set(f.get("domain", "") for f in self._filtered_findings)
+            domains = {f.get("domain", "") for f in self._filtered_findings}
             domain_label = "_".join(sorted(d for d in domains if d)) or "all"
 
             lines = [f"# prometheus Findings Export — {domain_label}", ""]
@@ -983,7 +1042,7 @@ class FindingsLibraryPanel(VerticalScroll):
                             lines.append("")
 
             # Write to file
-            safe_domain = re.sub(r'[^\w-]', '', domain_label)[:50]
+            safe_domain = re.sub(r"[^\w-]", "", domain_label)[:50]
             filename = f"{safe_domain}_findings_export.md"
 
             export_dir = os.path.expanduser("~/prometheus-source/reports")

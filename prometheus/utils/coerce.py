@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 from typing import TypeVar
 
+
 T = TypeVar("T")
 
 
-def coerce_to_list(
+def coerce_to_list[T](
     value: list[T] | str | None,
     *,
     fallback: list[T] | None = None,

@@ -1,6 +1,6 @@
 ---
 title: "Quick Start"
-description: "Install Strix and run your first security scan"
+description: "Install Prometheus and run your first security scan"
 ---
 
 ## Prerequisites
@@ -13,12 +13,12 @@ description: "Install Strix and run your first security scan"
 <Tabs>
   <Tab title="curl">
     ```bash
-    curl -sSL https://strix.ai/install | bash
+    curl -sSL https://prometheus.ai/install | bash
     ```
   </Tab>
   <Tab title="pipx">
     ```bash
-    pipx install strix-agent
+    pipx install prometheus-agent
     ```
   </Tab>
 </Tabs>
@@ -28,7 +28,7 @@ description: "Install Strix and run your first security scan"
 Set your LLM provider:
 
 ```bash
-export STRIX_LLM="openai/gpt-5.4"
+export PROMETHEUS_LLM="openai/gpt-5.4"
 export LLM_API_KEY="your-api-key"
 ```
 
@@ -39,29 +39,29 @@ For best results, use `openai/gpt-5.4`, `anthropic/claude-opus-4-6`, or `openai/
 ## Run Your First Scan
 
 ```bash
-strix --target ./your-app
+prometheus --target ./your-app
 ```
 
 <Note>
-First run pulls the Docker sandbox image automatically. Results are saved to `strix_runs/<run-name>`.
+First run pulls the Docker sandbox image automatically. Results are saved to `prometheus_runs/<run-name>`.
 </Note>
 
 ## Target Types
 
-Strix accepts multiple target types:
+Prometheus accepts multiple target types:
 
 ```bash
 # Local codebase
-strix --target ./app-directory
+prometheus --target ./app-directory
 
 # GitHub repository
-strix --target https://github.com/org/repo
+prometheus --target https://github.com/org/repo
 
 # Live web application
-strix --target https://your-app.com
+prometheus --target https://your-app.com
 
 # Multiple targets (white-box testing)
-strix -t https://github.com/org/repo -t https://your-app.com
+prometheus -t https://github.com/org/repo -t https://your-app.com
 ```
 
 ## Next Steps

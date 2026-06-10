@@ -20,8 +20,82 @@ logger = logging.getLogger(__name__)
 # In-container Caido sidecar port (matches the image's caido-cli bind).
 _CONTAINER_CAIDO_PORT = 48080
 
+# Browser-harness mount point inside the sandbox.
+_BROWSER_HARNESS_HOST = Path.home() / "browser-harness"
+_BROWSER_HARNESS_MOUNT = "/opt/browser-harness"
+
+# Browsercode mount point inside the sandbox.
+_BROWSERCODE_HOST = Path.home() / "browsercode"
+_BROWSERCODE_MOUNT = "/opt/browsercode"
+
+# Scan pipeline script mount — the script isn't in the upstream strix-sandbox image.
+# Mount the entire scripts/ directory so Docker can create /scripts/ as a mount point.
+_PIPELINE_SCRIPTS_HOST = Path("/mnt/hdd/prometheus-data/prometheus-source/scripts")
+_PIPELINE_SCRIPTS_MOUNT = "/scripts"
+
+# Extra bind mounts pending injection into the next Docker container creation.
+# Set by create_or_reuse(), consumed by docker_client._create_container().
+_pending_extra_bind_mounts: list[dict[str, str]] = []
+
 
 _SESSION_CACHE: dict[str, dict[str, Any]] = {}
+
+
+async def _setup_browser_automation(session: Any) -> None:
+    """Install browser-harness deps and start Chromium with CDP inside the sandbox.
+
+    Called after Caido bootstrap. Non-fatal — if this fails, the scan
+    continues without browser tools.
+    """
+    # Step 1: Install browser-harness Python dependencies.
+    # Bypass Tor for pip install — this is internal setup, not scanning traffic.
+    logger.info("Installing browser-harness dependencies in sandbox...")
+    deps_result = await session.exec(
+        "sh", "-c",
+        "http_proxy= https_proxy= ALL_PROXY= "
+        "/app/.venv/bin/pip install --no-cache-dir "
+        "cdp-use==1.4.5 fetch-use==0.4.0 pillow websockets 2>&1 | tail -5",
+        timeout=120,
+    )
+    if deps_result.ok():
+        deps_out = deps_result.stdout.decode("utf-8", errors="replace").strip()
+        logger.info("browser-harness deps installed: %s", deps_out[:200])
+    else:
+        stderr = deps_result.stderr.decode("utf-8", errors="replace").strip()[:200]
+        logger.warning("browser-harness deps install failed: %s", stderr)
+        return
+
+    # Step 2: Start Chromium with CDP (remote debugging port).
+    # Chromium is already installed in the sandbox image at /usr/bin/chromium.
+    logger.info("Starting Chromium with CDP on port 9222...")
+    chrome_result = await session.exec(
+        "sh", "-c",
+        "nohup /usr/bin/chromium "
+        "--no-sandbox "
+        "--disable-gpu "
+        "--disable-dev-shm-usage "
+        "--headless=new "
+        "--remote-debugging-port=9222 "
+        "--remote-debugging-address=0.0.0.0 "
+        "--remote-allow-origins=* "
+        "--no-first-run "
+        "--no-default-browser-check "
+        "--disable-background-networking "
+        "--disable-extensions "
+        "--user-data-dir=/tmp/chromium-cdp "
+        ">/tmp/chromium-cdp.log 2>&1 & "
+        "sleep 2 && curl -s --max-time 5 http://127.0.0.1:9222/json/version | head -5",
+        timeout=30,
+    )
+    if chrome_result.ok():
+        chrome_out = chrome_result.stdout.decode("utf-8", errors="replace").strip()
+        if "Browser" in chrome_out or "webSocketDebuggerUrl" in chrome_out:
+            logger.info("Chromium CDP ready: %s", chrome_out[:200])
+        else:
+            logger.warning("Chromium CDP may not be ready: %s", chrome_out[:200])
+    else:
+        stderr = chrome_result.stderr.decode("utf-8", errors="replace").strip()[:200]
+        logger.warning("Chromium CDP start failed: %s", stderr)
 
 
 async def create_or_reuse(
@@ -48,12 +122,54 @@ async def create_or_reuse(
             continue
         entries[ws_subdir] = LocalDir(src=Path(host_path).expanduser().resolve())
 
+    # Mount browser-harness from host if available (read-only).
+    # NOTE: These are NOT added to the manifest (SDK requires relative paths).
+    # They are passed as extra bind mounts via _EXTRA_BIND_MOUNTS in docker_client.py.
+    _extra_bind_mounts: list[dict[str, str]] = []
+    if _BROWSER_HARNESS_HOST.is_dir():
+        _extra_bind_mounts.append({
+            "host": str(_BROWSER_HARNESS_HOST.resolve()),
+            "container": _BROWSER_HARNESS_MOUNT,
+        })
+        logger.info("Will mount browser-harness from %s", _BROWSER_HARNESS_HOST)
+    else:
+        logger.warning("browser-harness not found at %s — browser tools unavailable", _BROWSER_HARNESS_HOST)
+
+    # Mount browsercode from host if available (read-only).
+    if _BROWSERCODE_HOST.is_dir():
+        _extra_bind_mounts.append({
+            "host": str(_BROWSERCODE_HOST.resolve()),
+            "container": _BROWSERCODE_MOUNT,
+        })
+        logger.info("Will mount browsercode from %s", _BROWSERCODE_HOST)
+    else:
+        logger.warning("browsercode not found at %s — browsercode unavailable", _BROWSERCODE_HOST)
+
+    # Mount scan pipeline script (required — scan fails without it).
+    if _PIPELINE_SCRIPTS_HOST.is_dir():
+        _extra_bind_mounts.append({
+            "host": str(_PIPELINE_SCRIPTS_HOST.resolve()),
+            "container": _PIPELINE_SCRIPTS_MOUNT,
+        })
+        logger.info("Will mount scripts/ from %s", _PIPELINE_SCRIPTS_HOST)
+    else:
+        logger.error(
+            "scripts/ NOT FOUND at %s — scan pipeline will fail with exit 127",
+            _PIPELINE_SCRIPTS_HOST,
+        )
+
     # Caido runs as an in-container sidecar; HTTP(S) traffic from any
     # process started via ``session.exec`` (the SDK's Shell tool, etc.)
     # picks up these env vars automatically. ``NO_PROXY`` keeps the
     # agent-browser CDP daemon's localhost traffic from looping back
     # through Caido.
     container_caido_url = f"http://127.0.0.1:{_CONTAINER_CAIDO_PORT}"
+    # Build PYTHONPATH: include browser-harness src if mounted.
+    pypath_parts = ["/opt/prometheus-python"]
+    if _BROWSER_HARNESS_HOST.is_dir():
+        pypath_parts.append(f"{_BROWSER_HARNESS_MOUNT}/src")
+    extra_pythonpath = ":".join(pypath_parts)
+
     manifest = Manifest(
         entries=entries,
         environment=Environment(
@@ -64,9 +180,16 @@ async def create_or_reuse(
                 "https_proxy": container_caido_url,
                 "ALL_PROXY": container_caido_url,
                 "NO_PROXY": "localhost,127.0.0.1",
+                "PYTHONPATH": extra_pythonpath,
+                # Browser-harness CDP connection to in-container Chromium.
+                "BU_CDP_URL": "http://127.0.0.1:9222",
             },
         ),
     )
+
+    # Store extra bind mounts for the Docker client to pick up
+    global _pending_extra_bind_mounts  # noqa: PLW0603
+    _pending_extra_bind_mounts = _extra_bind_mounts
 
     backend_name = load_settings().runtime.backend
     backend = get_backend(backend_name)
@@ -77,19 +200,35 @@ async def create_or_reuse(
         backend_name,
         image,
     )
-    try:
-        client, session = await backend(
-            image=image,
-            manifest=manifest,
-            exposed_ports=(_CONTAINER_CAIDO_PORT,),
-        )
-    except RuntimeError:
-        raise  # Already wrapped with context by docker_client
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to create Docker sandbox: {exc}. "
-            f"Is Docker running? Check 'docker info' and 'docker ps'."
-        ) from exc
+    import asyncio
+    _max_retries = 3
+    _last_exc = None
+    client = None
+    session = None
+    for _attempt in range(1, _max_retries + 1):
+        try:
+            client, session = await backend(
+                image=image,
+                manifest=manifest,
+                exposed_ports=(_CONTAINER_CAIDO_PORT,),
+            )
+            break  # success
+        except RuntimeError:
+            raise  # Already wrapped with context by docker_client
+        except Exception as exc:
+            _last_exc = exc
+            if _attempt < _max_retries:
+                _delay = 5 * _attempt
+                logger.warning(
+                    "Sandbox creation attempt %d/%d failed: %s -- retrying in %ds",
+                    _attempt, _max_retries, exc, _delay,
+                )
+                await asyncio.sleep(_delay)
+            else:
+                raise RuntimeError(
+                    f"Failed to create Docker sandbox after {_max_retries} attempts: {_last_exc}. "
+                    f"Is Docker running? Check 'docker info' and 'docker ps'."
+                ) from _last_exc
 
     try:
         caido_endpoint = await session.resolve_exposed_port(_CONTAINER_CAIDO_PORT)
@@ -102,6 +241,7 @@ async def create_or_reuse(
     host_caido_url = f"http://{caido_endpoint.host}:{caido_endpoint.port}"
     logger.debug("Caido host endpoint resolved: %s", host_caido_url)
 
+    caido_client = None
     try:
         caido_client = await bootstrap_caido(
             session,
@@ -109,10 +249,19 @@ async def create_or_reuse(
             container_url=container_caido_url,
         )
     except Exception as exc:
-        raise RuntimeError(
-            f"Failed to start Caido proxy inside sandbox: {exc}. "
-            f"The container may not have started correctly."
-        ) from exc
+        logger.warning(
+            "Caido proxy bootstrap failed (non-fatal): %s. "
+            "Proxy interception tools will be unavailable but the scan continues.",
+            exc,
+        )
+
+    # --- Browser automation setup ---
+    # Install browser-harness deps and start Chromium with CDP.
+    if _BROWSER_HARNESS_HOST.is_dir():
+        try:
+            await _setup_browser_automation(session)
+        except Exception as exc:
+            logger.warning("Browser automation setup failed (non-fatal): %s", exc)
 
     bundle = {
         "client": client,

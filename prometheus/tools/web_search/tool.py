@@ -10,6 +10,7 @@ from typing import Any
 
 from agents import RunContextWrapper, function_tool
 
+
 logger = logging.getLogger(__name__)
 
 # Lazy import — ddgs may not be installed in all environments
@@ -35,11 +36,12 @@ def _get_ddgs():
             except ImportError:
                 raise ImportError(
                     "ddgs package not installed. Run: pip install ddgs"
-                )
+                ) from None
     return _ddgs
 
 
-def _do_search(query: str, max_results: int = 8) -> dict[str, Any]:
+def _do_search(query: str, max_results: int = 3) -> dict[str, Any]:
+    max_results = min(max_results, 3)
     if not query or not query.strip():
         return {"success": False, "error": "Query cannot be empty"}
 
@@ -63,6 +65,7 @@ def _do_search(query: str, max_results: int = 8) -> dict[str, Any]:
             DDGS = _get_ddgs()
             results = DDGS().text(query, max_results=max_results)
         except Exception:
+            logger.warning("ddgs search retry also failed for query: %s", query[:80], exc_info=True)
             return {
                 "success": False,
                 "error": f"Web search failed: {exc}",
@@ -124,9 +127,10 @@ async def web_search(ctx: RunContextWrapper, query: str) -> str:
     in the query, the more actionable the answer. Vague queries get
     generic answers.
 
-    Returns up to 8 search results with titles, URLs, and snippets.
-    Read the results carefully — they contain the latest CVE data,
-    exploit code, and bypass techniques you need.
+    Returns up to 3 search results with titles, URLs, and snippets.
+    This cap is intentional. For exploit research, use at most 3 web
+    searches per concrete attack idea, then test the target instead of
+    looping on broad searches.
 
     **Good example queries** (each is a full sentence, names a
     version/product, and asks one concrete thing):
