@@ -57,8 +57,12 @@ import prom_rl_state as state  # type: ignore[import-not-found]
 # === Constants ===
 HOME = Path.home()
 PROM_SRC = HOME / "prometheus-source"
-PROM_RUNS = Path("/home/hdd/prometheus_runs") if Path("/home/hdd").exists() else Path("/home/stefan/prometheus_runs")
-PROM_RUNS = Path("/home/stefan/prometheus_runs")
+PROM_RUNS_CANDIDATES = [
+    Path("/home/stefan/prometheus_runs"),
+    Path("/mnt/hdd/prometheus-data/prometheus_runs"),
+    Path("/mnt/hdd/prometheus_runs"),
+]
+PROM_RUNS = next((p for p in PROM_RUNS_CANDIDATES if p.exists() and p.is_dir()), PROM_RUNS_CANDIDATES[0])
 PROM_DB = HOME / ".prometheus" / "prometheus.db"
 SCAN_PERSISTENCE_DB = HOME / ".prometheus" / "scans.db"
 TARGETS_JSON = HOME / ".prometheus" / "prom_rl_targets.json"
@@ -255,6 +259,73 @@ def prometheus_process_count() -> int:
         return len([l for l in out.strip().split("\n") if l.strip()])
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return 0
+
+
+# A scan is considered "hung" if it has been "running" or "starting" for
+# longer than this AND its prometheus.log has not been written to within
+# HEARTBEAT_STALE_S. The watchdog (prometheus-watchdog.py) is the primary
+# recovery mechanism, but if it is slow or down, this heartbeat makes
+# the loop self-correcting.
+HEARTBEAT_STALE_S = 600  # 10 min of no log activity → stuck
+
+
+def _mark_stuck_runs() -> int:
+    """Find run dirs in PROM_RUNS* that are 'running'/'starting' but have
+    no log activity for HEARTBEAT_STALE_S, OR have no prometheus.log at
+    all AND the run.json is older than HEARTBEAT_STALE_S. The latter
+    case is a recon-only run that wrote run.json then exited cleanly
+    without producing a log file (e.g. war.gov recon mode).
+
+    Patch run.json status to 'stuck' so the loop's REVIEW step picks
+    them up. Returns the number of run dirs that were patched.
+    """
+    import time as _t
+    now = _t.time()
+    seen: set[Path] = set()
+    patched = 0
+    for runs_root in PROM_RUNS_CANDIDATES:
+        if not runs_root.exists():
+            continue
+        for run_dir in sorted(runs_root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            if not run_dir.is_dir() or run_dir in seen:
+                continue
+            seen.add(run_dir)
+            run_json = run_dir / "run.json"
+            if not run_json.exists():
+                continue
+            try:
+                data = json.loads(run_json.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            if data.get("status") not in ("starting", "running", None):
+                continue
+            log_path = run_dir / "prometheus.log"
+            if log_path.exists():
+                log_mtime = log_path.stat().st_mtime
+                if (now - log_mtime) < HEARTBEAT_STALE_S:
+                    continue
+                age_s = int(now - log_mtime)
+                reason = f"no log activity for {age_s}s"
+            else:
+                # No log file at all — treat as stuck if the run.json
+                # is older than HEARTBEAT_STALE_S. The run never wrote
+                # a heartbeat; the underlying process must be dead.
+                run_age = int(now - run_json.stat().st_mtime)
+                if run_age < HEARTBEAT_STALE_S:
+                    continue
+                age_s = run_age
+                reason = f"no prometheus.log and run.json is {age_s}s old"
+            data["status"] = "stuck"
+            data["end_time"] = now_iso()
+            data["stuck_reason"] = (
+                f"{reason}; RL loop heartbeat marked this as hung"
+            )
+            try:
+                run_json.write_text(json.dumps(data, indent=2))
+            except OSError:
+                continue
+            patched += 1
+    return patched
 
 
 def pick_action(epsilon: float = EPSILON) -> str:
@@ -490,6 +561,20 @@ def _action_scan_locked(cfg: dict, lock_fh: object) -> dict:
             "action": "SCAN",
             "target": key,
             "result": f"scan for {t['name']} already starting/running in DB; skipped",
+            "score": 0.0,
+        }
+
+    # Heartbeat: detect and mark any hung scans BEFORE we launch. A
+    # run.json with status=running AND a prometheus.log whose mtime is
+    # older than HEARTBEAT_STALE_S is almost certainly stuck (the
+    # prometheus process is alive in a docker container but doing
+    # nothing useful). Patch it to status=stuck so subsequent steps
+    # treat it as terminal and the loop can move on.
+    if _mark_stuck_runs():
+        return {
+            "action": "SCAN",
+            "target": key,
+            "result": f"hung scan(s) detected; marked stuck and skipped this tick to retry next",
             "score": 0.0,
         }
 
