@@ -27,7 +27,6 @@
 <a href="https://x.com/prometheus_ai"><img src="https://github.com/useprometheus/.github/raw/main/imgs/X.png" height="40" alt="Follow on X"></a>
 
 
-<a href="https://trendshift.io/repositories/15362" target="_blank"><img src="https://trendshift.io/api/badge/repositories/15362" alt="useprometheus/prometheus | Trendshift" width="250" height="55"/></a>
 
 </div>
 
