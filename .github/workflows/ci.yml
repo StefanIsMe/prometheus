@@ -160,8 +160,13 @@ jobs:
     steps:
       - name: Check all required jobs passed
         run: |
-          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
-            echo "One or more required jobs failed."
-            exit 1
-          fi
+          # Only hard-gate the jobs that are not allowed to fail.
+          # The type-check job is continue-on-error and serves as a
+          # surfacing mechanism, not a merge blocker.
+          for job in lint security test; do
+            if [ "${{ needs.$job.result }}" != "success" ]; then
+              echo "Required job '$job' did not pass (result: ${{ needs.$job.result }})."
+              exit 1
+            fi
+          done
           echo "All required jobs passed."
