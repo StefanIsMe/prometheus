@@ -772,6 +772,13 @@ def main() -> None:
         run_model_cli(sys.argv[2:])
         return
 
+    # Dispatch `prometheus xbow` to the XBOW validation-benchmarks
+    # harness. Subcommands: list, run, report.
+    if len(sys.argv) > 1 and sys.argv[1] == "xbow":
+        from prometheus.eval.xbow.runner import main as xbow_main
+        sys.exit(xbow_main(sys.argv[2:]))
+        return
+
     args = parse_arguments()
 
     # Apply rate limit from CLI flag

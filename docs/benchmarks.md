@@ -24,18 +24,22 @@ harness has been run end-to-end at least once, the honest number is
 
 ```bash
 # Smoke test: list the curated pilot challenges (no docker side-effects)
-PYTHONPATH=. python -m prometheus eval.xbow list
+PYTHONPATH=. python -m prometheus.interface.main xbow list
 
 # Run a single challenge as a smoke test
-PYTHONPATH=. python -m prometheus eval.xbow run --ids XBEN-001-24 --concurrency 1
+PYTHONPATH=. python -m prometheus.interface.main xbow run --ids XBEN-001-24 --concurrency 1
 
 # Run the full 5-challenge pilot
-PYTHONPATH=. python -m prometheus eval.xbow run \
+PYTHONPATH=. python -m prometheus.interface.main xbow run \
     --ids XBEN-001-24,XBEN-002-24,XBEN-003-24,XBEN-050-24,XBEN-100-24 \
     --concurrency 4
 
+# Or, equivalently, via the convenience script:
+./scripts/xbow_run.sh list
+./scripts/xbow_run.sh run --ids XBEN-001-24,XBEN-050-24 --concurrency 2
+
 # Generate a report from a prior run
-PYTHONPATH=. python -m prometheus eval.xbow report <run_id>
+PYTHONPATH=. python -m prometheus.interface.main xbow report <run_id>
 ```
 
 Reports are written to `~/.prometheus/eval/xbow/<run_id>/report.md`
