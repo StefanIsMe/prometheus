@@ -1,13 +1,5 @@
 # Security Policy
 
-> **Note on first-time setup:** If this is your first visit as a
-> maintainer, confirm that **Private vulnerability reporting** is enabled
-> under `Settings → Code security and analysis → Private vulnerability
-> reporting`. With the repository now public, the GitHub Security tab
-> will then render a "Report a vulnerability" button at
-> `https://github.com/StefanIsMe/prometheus/security/advisories/new` and
-> SECURITY.md will be linked automatically from the repository sidebar.
-
 Prometheus is an open-source, Alpha-stage security-testing tool. We take
 vulnerabilities in the tool itself seriously, and we ask that you report
 them through the channels below rather than opening a public issue.
