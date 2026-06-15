@@ -1,71 +1,113 @@
 <p align="center">
-  <img src=".github/cover.png" alt="prometheus Banner" width="100%">
+  <img src=".github/screenshot.png" alt="prometheus" width="100%" style="border-radius: 16px;">
 </p>
 
 <div align="center">
 
 # prometheus
 
-### Open-source AI hackers to find and fix your app’s vulnerabilities.
+### Open-source AI agents for authorized security testing and bug-bounty validation.
 
 <br/>
 
-
-<a href="https://github.com/StefanIsMe/prometheus"><img src="https://img.shields.io/github/stars/StefanIsMe/prometheus?style=flat-square" alt="GitHub Stars"></a>
-<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-3b82f6?style=flat-square" alt="License: MIT"></a>
+<a href="https://github.com/StefanIsMe/prometheus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/StefanIsMe/prometheus?style=flat-square" alt="License: MIT"></a>
+<a href="https://github.com/StefanIsMe/prometheus/stargazers"><img src="https://img.shields.io/github/stars/StefanIsMe/prometheus?style=flat-square" alt="GitHub Stars"></a>
 <a href="https://pypi.org/project/prometheus-agent/"><img src="https://img.shields.io/pypi/v/prometheus-agent?style=flat-square" alt="PyPI Version"></a>
+<a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12%2B-blue?style=flat-square" alt="Python 3.12+"></a>
+<img src="https://img.shields.io/badge/status-alpha-orange?style=flat-square" alt="Status: Alpha">
 
+<br/>
+
+[Quick Start](#-quick-start) · [Documentation](docs/) · [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Disclaimer](DISCLAIMER.md) · [Changelog](CHANGELOG.md) · [Authors](AUTHORS)
 
 </div>
 
-
-> [!TIP]
+> [!WARNING]
+> **Prometheus is an active security-testing tool.** It probes, mutates, and
+> (in a sandbox) executes code against the targets you point it at. **Only
+> run it against systems you own or have explicit, written authorization to
+> test.** See [DISCLAIMER.md](DISCLAIMER.md) for the full limitation of
+> liability and authorized-use terms. By using Prometheus you agree to them.
 
 ---
 
+## What is Prometheus?
 
-## prometheus Overview
+Prometheus is a CLI agent that takes a target — a local directory, a Git
+repository, or a live URL — and runs an **authorized security test** against
+it. It is built around a 9-stage pipeline (Discovery & Modeling → Deep Dive
+& Verification → Synthesis, Chaining & Reporting), and uses
+**multi-agent orchestration** with N-run LLM voting to keep the false-positive
+rate down on the way to validated, proof-of-concept-backed findings.
 
-prometheus are autonomous AI agents that act just like real hackers - they run your code dynamically, find vulnerabilities, and validate them through actual proof-of-concepts. Built for developers and security teams who need fast, accurate security testing without the overhead of manual pentesting or the false positives of static analysis tools.
+The v1 release focuses on the seven vulnerability classes most useful to
+bug-bounty and external-attack-surface work:
 
-**Key Capabilities:**
+- **IDOR / BOLA** — object-level authorization failures
+- **Auth bypass** — protected actions reachable without a valid session
+- **Account enumeration** — stable differential responses
+- **SSRF** — server-side request forgery with OOB or internal-reach proof
+- **CORS misconfiguration** — readable protected responses or state-changing CSRF
+- **Exposed unauthenticated** — sensitive endpoints or privileged actions reachable
+- **Source map / JS-bundle leak** — code disclosure that chains to an exploit
 
-- **Full hacker toolkit** out of the box
-- **Teams of agents** that collaborate and scale
-- **Real validation** with PoCs, not false positives
-- **Developer‑first** CLI with actionable reports
-- **Auto‑fix & reporting** to accelerate remediation
+Findings are validated by an **adversarial verification stage** with a
+different model tier than the deep-dive, gated by a **7-Question
+triage gate** (PASS / KILL / DOWNGRADE / CHAIN_REQUIRED), filtered against
+an **Always-Rejected matrix** (≥20 reject rules) and a
+**Conditionally-Valid chain table** (≥12 chain patterns), and finally
+de-duplicated and chained before being written to the report.
 
+The full pipeline, gates, and playbooks are documented in
+[INTEGRATION_PLAN.md](INTEGRATION_PLAN.md).
 
-<br>
+---
 
+## Built on the Shoulders Of
 
-<div align="center">
-  <img src=".github/screenshot.png" alt="prometheus Demo" width="1000" style="border-radius: 16px;">
-</div>
+Prometheus is a hard fork of [Strix](https://github.com/usestrix/strix)
+(Apache-2.0), extended with two further open-source projects:
 
+- **[Claude-BugHunter (CBH)](https://github.com/elementalsouls/Claude-BugHunter)**
+  by [Sachin Sharma (@ElementalSouls)](https://github.com/elementalsouls) —
+  MIT. Contributed the **engagement-folder model**, the **scope guardrail**
+  with suffix-confusion protection, the **7-Question Gate**, the
+  **Always-Rejected** and **Conditionally-Valid** matrices, the
+  **evidence-hygiene skill**, and the **seven hunt playbooks**.
+- **[Visa Vulnerability Agentic Harness (VVAH)](https://github.com/visa/visa-vulnerability-agentic-harness)**
+  by [Visa, Inc.](https://github.com/visa) — Apache-2.0. Contributed the
+  **9-stage pipeline shape**, the **threat-model stage**, the **N-run
+  deterministic LLM voting** for false-positive reduction, the
+  **`run_manifest.json` schema**, and **SARIF 2.1.0** emission.
+- **[Strix](https://github.com/usestrix/strix)** by the Strix
+  contributors — Apache-2.0. Contributed the **original agent runtime**,
+  **CLI/TUI**, **sandbox lifecycle**, **multi-agent orchestration**, the
+  HTTP proxy, browser automation, terminal, Python runtime, and knowledge
+  store that Prometheus was forked and renamed from.
 
-## Use Cases
+Per-file attribution is preserved in the module docstrings under
+`prometheus/` and the playbook headers under `prometheus/playbooks/`. The
+full lineage plan is in [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md); see
+[AUTHORS](AUTHORS) for a structured attribution list.
 
-- **Application Security Testing** - Detect and validate critical vulnerabilities in your applications
-- **Rapid Penetration Testing** - Get penetration tests done in hours, not weeks, with compliance reports
-- **Bug Bounty Automation** - Automate bug bounty research and generate PoCs for faster reporting
-- **CI/CD Integration** - Run tests in CI/CD to block vulnerabilities before reaching production
+---
 
 ## 🚀 Quick Start
 
 **Prerequisites:**
-- Docker (running)
-- An LLM API key from any supported LLM provider (OpenAI, Anthropic, Google, etc.)
 
-### Installation & First Scan
+- Python 3.12+
+- Docker (running) — used to sandbox probe execution
+- An LLM API key from any [supported provider](docs/llm-providers/)
+
+### Install & first scan
 
 ```bash
 # Install prometheus
 curl -sSL https://raw.githubusercontent.com/StefanIsMe/prometheus/main/scripts/install.sh | bash
 
 # Configure your AI provider
-export prometheus_LLM="openai/gpt-5.4"
+export PROMETHEUS_LLM="openai/gpt-5.4"
 export LLM_API_KEY="your-api-key"
 
 # Run your first security assessment
@@ -73,94 +115,107 @@ prometheus --target ./app-directory
 ```
 
 > [!NOTE]
-> First run automatically pulls the sandbox Docker image. Results are saved to `prometheus_runs/<run-name>`
+> First run pulls the sandbox Docker image. Run artifacts go to
+> `prometheus_runs/<run-name>/`; the canonical knowledge store is at
+> `~/.prometheus/prometheus.db`.
+
+For pipx / uv installs, more target types, and the full
+provider matrix, see [`docs/quickstart.mdx`](docs/quickstart.mdx).
 
 ---
 
 ## ✨ Features
 
-### Agentic Security Tools
+### Agentic security toolkit
 
-prometheus agents come equipped with a comprehensive security testing toolkit:
+Every scan starts a sandboxed runtime that exposes the agent a complete
+hacker toolkit:
 
-- **Full HTTP Proxy** - Full request/response manipulation and analysis
-- **Browser Automation** - Multi-tab browser for testing of XSS, CSRF, auth flows
-- **Terminal Environments** - Interactive shells for command execution and testing
-- **Python Runtime** - Custom exploit development and validation
-- **Reconnaissance** - Automated OSINT and attack surface mapping
-- **Code Analysis** - Static and dynamic analysis capabilities
-- **Knowledge Management** - Structured findings and attack documentation
+- **Full HTTP proxy** — request/response capture, replay, and mutation
+  (via Caido SDK)
+- **Browser automation** — multi-tab, multi-page XSS / CSRF / auth-flow
+  testing (via Playwright)
+- **Terminal** — interactive shells inside the sandbox
+- **Python runtime** — custom exploit development and validation
+- **Reconnaissance** — SPA-aware seed-HTML fetch, JS-bundle download,
+  regex-mined API routes, secret scanning, endpoint classification
+- **Code analysis** — static and dynamic, source-aware when scanning a
+  local directory
+- **Knowledge store** — durable, queryable findings and evidence
+  (SQLite at `~/.prometheus/prometheus.db`)
 
-### Comprehensive Vulnerability Detection
+### Graph of agents
 
-prometheus can identify and validate a wide range of security vulnerabilities:
+Multi-agent orchestration: specialized agents per attack surface,
+parallel execution, dynamic coordination. The Penetration Task Graph
+(PTG) is a phase-based pentest workflow (RECON → FINGERPRINT →
+THREAT_INTEL → VULNERABILITY_SCAN → EXPLOITATION) inspired by VulnBot
+(arXiv:2501.13411).
 
-- **Access Control** - IDOR, privilege escalation, auth bypass
-- **Injection Attacks** - SQL, NoSQL, command injection
-- **Server-Side** - SSRF, XXE, deserialization flaws
-- **Client-Side** - XSS, prototype pollution, DOM vulnerabilities
-- **Business Logic** - Race conditions, workflow manipulation
-- **Authentication** - JWT vulnerabilities, session management
-- **Infrastructure** - Misconfigurations, exposed services
+### Adversarial verification & gating
 
-### Graph of Agents
+Findings are not reported as-is. They pass through:
 
-Advanced multi-agent orchestration for comprehensive security testing:
+1. **N-run LLM voting** (default 3 runs at temperature > 0; default
+   threshold 2/3) to filter flaky positives.
+2. **Adversarial verification** by a separate role with a different
+   model tier than the deep-dive.
+3. **7-Question Gate** — PASS / KILL_Q{n} / DOWNGRADE_Q{n} / CHAIN_REQUIRED
+   with 5-min and 30-min time-boxes.
+4. **Always-Rejected matrix** — 20+ reject rules for findings that
+   must not be reported (e.g. missing CSP alone, internal hostname
+   alone).
+5. **Conditionally-Valid chain table** — 12+ chain patterns
+   (e.g. open redirect + OAuth = ATO).
+6. **Chain linker** — proposes chains across findings on the same
+   `(domain, asset_class)`.
 
-- **Distributed Workflows** - Specialized agents for different attacks and assets
-- **Scalable Testing** - Parallel execution for fast comprehensive coverage
-- **Dynamic Coordination** - Agents collaborate and share discoveries
+### Reporting
+
+Versioned report artifacts (`report_markdown`, `bugcrowd_json`,
+`h1_markdown`, `poc_script`, `evidence_bundle`) plus **SARIF 2.1.0**
+output. HackerOne and Bugcrowd drafts, Bugcrowd VRT classification,
+CVE + CWE validation, and duplicate detection. **No auto-submit** —
+human review of every report is mandatory.
+
+### Modes
+
+- **Interactive TUI** (Textual)
+- **Headless** (`-n` / `--non-interactive`) — prints real-time findings
+  and a final report; non-zero exit on validated vulnerabilities
+- **PR diff-scope** (`--scope-mode diff --diff-base origin/main`) for
+  CI pull-request runs
+- **GitHub Actions** — see the example below or
+  [`docs/integrations/github-actions.mdx`](docs/integrations/github-actions.mdx)
 
 ---
 
-## Usage Examples
-
-### Basic Usage
+## Usage examples
 
 ```bash
-# Scan a local codebase
+# Local codebase
 prometheus --target ./app-directory
 
-# Security review of a GitHub repository
+# Public GitHub repo
 prometheus --target https://github.com/org/repo
 
-# Black-box web application assessment
+# Live web app
 prometheus --target https://your-app.com
-```
 
-### Advanced Testing Scenarios
+# Grey-box / authenticated
+prometheus --target https://your-app.com --instruction "test as user:pass"
 
-```bash
-# Grey-box authenticated testing
-prometheus --target https://your-app.com --instruction "Perform authenticated testing using credentials: user:pass"
-
-# Multi-target testing (source code + deployed app)
+# Multi-target
 prometheus -t https://github.com/org/app -t https://your-app.com
 
-# White-box source-aware scan (local repository)
-prometheus --target ./app-directory
-
-# Focused testing with custom instructions
-prometheus --target api.your-app.com --instruction "Focus on business logic flaws and IDOR vulnerabilities"
-
-# Provide detailed instructions through file (e.g., rules of engagement, scope, exclusions)
+# Custom rules of engagement
 prometheus --target api.your-app.com --instruction-file ./instruction.md
 
-# Force PR diff-scope against a specific base branch
+# PR diff-scope in CI
 prometheus -n --target ./ --scope-mode diff --diff-base origin/main
 ```
 
-### Headless Mode
-
-Run prometheus programmatically without interactive UI using the `-n/--non-interactive` flag—perfect for servers and automated jobs. The CLI prints real-time vulnerability findings, and the final report before exiting. Exits with non-zero code when vulnerabilities are found.
-
-```bash
-prometheus -n --target https://your-app.com
-```
-
-### CI/CD (GitHub Actions)
-
-prometheus can be added to your pipeline to run a security test on pull requests with a lightweight GitHub Actions workflow:
+### CI / GitHub Actions
 
 ```yaml
 name: prometheus-penetration-test
@@ -181,58 +236,154 @@ jobs:
 
       - name: Run prometheus
         env:
-          prometheus_LLM: ${{ secrets.prometheus_LLM }}
+          PROMETHEUS_LLM: ${{ secrets.PROMETHEUS_LLM }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-
         run: prometheus -n -t ./
 ```
 
 > [!TIP]
-> In CI pull request runs, prometheus automatically scopes quick reviews to changed files.
-> If diff-scope cannot resolve, ensure checkout uses full history (`fetch-depth: 0`) or pass
-> `--diff-base` explicitly.
+> Prometheus automatically scopes CI pull-request runs to changed files
+> when invoked with `-n` and a target of `./`. If diff-scope cannot
+> resolve, make sure checkout uses full history
+> (`fetch-depth: 0`) or pass `--diff-base` explicitly.
 
 ### Configuration
 
 ```bash
-export prometheus_LLM="openai/gpt-5.4"
+export PROMETHEUS_LLM="openai/gpt-5.4"
 export LLM_API_KEY="your-api-key"
 
 # Optional
-export LLM_API_BASE="your-api-base-url"  # if using a local model, e.g. Ollama, LMStudio
-export PERPLEXITY_API_KEY="your-api-key"  # for search capabilities
-export prometheus_REASONING_EFFORT="high"  # control thinking effort (default: high, quick scan: medium)
+export LLM_API_BASE="https://api.openai.com/v1"  # for local models, Ollama, LMStudio
+export PERPLEXITY_API_KEY="your-api-key"          # for search
+export PROMETHEUS_REASONING_EFFORT="high"         # high | medium | low
 ```
 
-> [!NOTE]
-> prometheus automatically saves your configuration to `~/.prometheus/cli-config.json`, so you don't have to re-enter it on every run.
+Configuration is persisted to `~/.prometheus/cli-config.json` so it
+does not need to be re-entered on every run.
 
-**Recommended models for best results:**
+**Recommended models:** `openai/gpt-5.4`, `anthropic/claude-sonnet-4-6`,
+`vertex_ai/gemini-3-pro-preview`. See [`docs/llm-providers/`](docs/llm-providers/)
+for the full list (Anthropic, OpenAI, Google, Vertex AI, Bedrock, Azure,
+local via Ollama/LMStudio).
 
-- [OpenAI GPT-5.4](https://openai.com/api/) — `openai/gpt-5.4`
-- [Anthropic Claude Sonnet 4.6](https://claude.com/platform/api) — `anthropic/claude-sonnet-4-6`
-- [Google Gemini 3 Pro Preview](https://cloud.google.com/vertex-ai) — `vertex_ai/gemini-3-pro-preview`
+---
 
-See the in-repo `docs/llm-providers/` directory for all supported providers including Vertex AI, Bedrock, Azure, and local models.
+## Project layout
+
+```
+prometheus/
+├── agents/         # Sandbox agent factory + system prompts
+├── chains/         # Chain templates (reserved)
+├── config/         # Settings, LLM config, Hermes bridge, role routing
+├── core/           # 9-stage pipeline, gates, voting, recon, validation
+├── db/             # Knowledge-store migrations (SQLite)
+├── docs/           # Mintlify documentation site
+├── engagement/     # Per-target engagement folder (CBH-derived)
+├── eval/           # Skills-on vs skills-off ablation harness
+├── interface/      # CLI / TUI / main entry point
+├── playbooks/      # 7 hunt playbooks (CBH-derived, 12-section format)
+├── report/         # Reporting, dedupe, SARIF 2.1.0
+├── runtime/        # Pluggable sandbox backends (Docker / local / native)
+├── skills/         # Markdown knowledge packs (vulnerabilities, frameworks, …)
+├── telemetry/      # PostHog + Scarf stubs (no network calls)
+├── tools/          # 24+ function tools exposed to agents
+└── utils/          # Small helpers
+```
+
+A few root-level files are probe artifacts and helper scripts used
+during local development (`jquery-1.8.1`, `x.com`,
+`prometheus_comms.py`, `prometheus-safe-launch.sh`, `prometheus_tail.sh`).
+The canonical tool is the `prometheus` console script installed by the
+Python package.
+
+---
 
 ## Documentation
 
-Full documentation is available in the [`docs/`](docs/) directory — including detailed guides for usage, CI/CD integrations, skills, and advanced configuration.
+Full documentation lives in [`docs/`](docs/) and is published as a
+Mintlify site. The README is a curated front door; for the details go
+to the docs:
+
+- [Quickstart](docs/quickstart.mdx)
+- [LLM providers](docs/llm-providers/) (Anthropic, OpenAI, Vertex, Azure, Bedrock, local)
+- [Integrations](docs/integrations/) (GitHub Actions, CI/CD)
+- [Advanced configuration](docs/advanced/configuration.mdx)
+- [Skills](docs/advanced/skills.mdx)
+- [Sandbox backends](docs/tools/sandbox.mdx)
+
+---
+
+## Status
+
+Prometheus v1.0.0 is **Alpha**. The 7-Question Gate, Always-Rejected /
+Conditionally-Valid matrices, N-run voting, and the seven hunt playbooks
+are in place; broader vulnerability coverage, a stable CI workflow, and
+additional sandbox backends are tracked in [CHANGELOG.md](CHANGELOG.md)
+under `[Unreleased]`. Expect breaking changes.
+
+Test count at v1.0.0: **262 tests passing** (see
+`cf3de8e fix: 5-phase audit remediation — 262 tests pass`).
+
+---
 
 ## Contributing
 
-We welcome contributions of code, docs, and new skills - check out our [Contributing Guide](CONTRIBUTING.md) to get started or open a [pull request](https://github.com/StefanIsMe/prometheus/pulls)/[issue](https://github.com/StefanIsMe/prometheus/issues).
+We welcome contributions of code, docs, and new skills — see
+[CONTRIBUTING.md](CONTRIBUTING.md) for the workflow. By contributing you
+agree to follow the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and to
+license your contribution under the project's MIT license. New
+contributors are added to [AUTHORS](AUTHORS) on their first merged PR.
 
-## Support the Project
+Open a [pull request](https://github.com/StefanIsMe/prometheus/pulls) or
+[issue](https://github.com/StefanIsMe/prometheus/issues).
 
-**Love prometheus?** Give us a ⭐ on GitHub!
+---
 
-## Acknowledgements
+## Legal
 
-prometheus builds on the incredible work of open-source projects like [LiteLLM](https://github.com/BerriAI/litellm), [Caido](https://github.com/caido/caido), [Nuclei](https://github.com/projectdiscovery/nuclei), [Playwright](https://github.com/microsoft/playwright), and [Textual](https://github.com/Textualize/textual). Huge thanks to their maintainers!
+- **License:** [MIT](LICENSE) — Copyright (c) 2026 Stefan Carter.
+- **Disclaimer:** [DISCLAIMER.md](DISCLAIMER.md) — the Author and
+  contributors are **not liable** for any damages arising from your
+  use of the software. **You assume all risk.** Use only against
+  systems you own or have explicit written authorization to test.
+- **Code of Conduct:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- **Security policy:** file a private vulnerability report via the
+  contact in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) until a dedicated
+  `SECURITY.md` is published.
+- **Trademark:** "Prometheus" is the project name. The Prometheus
+  trademark is not asserted on third-party forks or downstream
+  distributions of this MIT-licensed code.
 
+By using Prometheus or any of the code in this repository you agree
+to the MIT license, the [DISCLAIMER.md](DISCLAIMER.md), and the
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
-> [!WARNING]
-> Only test apps you own or have permission to test. You are responsible for using prometheus ethically and legally.
+---
 
-</div>
+## Acknowledgments
+
+Prometheus builds on the work of the following open-source projects
+and their maintainers:
+
+- **[LiteLLM](https://github.com/BerriAI/litellm)** — unified LLM
+  provider routing
+- **[Caido](https://github.com/caido/caido)** — HTTP proxy SDK
+- **[Nuclei](https://github.com/projectdiscovery/nuclei)** — template
+  format reference
+- **[Playwright](https://github.com/microsoft/playwright)** — headless
+  browser automation
+- **[Textual](https://github.com/Textualize/textual)** — terminal UI
+- **[VulnBot](https://arxiv.org/abs/2501.13411)** — inspiration for the
+  Penetration Task Graph (PTG)
+- **[shuvonsec/claude-bug-bounty](https://github.com/shuvonsec/claude-bug-bounty)** —
+  vendored inside the Claude-BugHunter skill bundle
+
+See [AUTHORS](AUTHORS) for the full project lineage and per-project
+attribution.
+
+---
+
+<p align="center">
+  <sub>Prometheus v1.0.0 · MIT · © 2026 Stefan Carter</sub>
+</p>

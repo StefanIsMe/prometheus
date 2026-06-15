@@ -1,0 +1,91 @@
+# Authors
+
+Prometheus is built by Stefan Carter and a community of contributors.
+
+## Primary Author
+
+- **Stefan Carter** ([@StefanIsMe](https://github.com/StefanIsMe)) — design, lead development, release engineering. `<stefan@withapurpose.co>`
+
+Stefan Carter is the copyright holder of the Prometheus codebase distributed
+under the terms of the [MIT License](LICENSE). The full limitation of
+liability and warranty disclaimer is set out in [DISCLAIMER.md](DISCLAIMER.md).
+
+## Project Lineage
+
+Prometheus is a hard fork of **[Strix](https://github.com/usestrix/strix)**
+(© Strix contributors, Apache-2.0), extended with the engagement-folder
+model, scope guardrail, 7-Question Gate, Always-Rejected /
+Conditionally-Valid matrices, and 7 hunt playbooks ported from
+**[Claude-BugHunter](https://github.com/elementalsouls/Claude-BugHunter)**
+by Sachin Sharma (ElementalSouls, MIT), and the 9-stage pipeline shape,
+N-run LLM voting, threat-model stage, SARIF 2.1.0 emission, and
+`run_manifest.json` schema derived from
+**[Visa Vulnerability Agentic Harness (VVAH)](https://github.com/visa/visa-vulnerability-agentic-harness)**
+(© 2026 Visa, Inc., Apache-2.0).
+
+Per-file attribution is preserved in the module docstrings under
+`prometheus/` and in the playbook headers under `prometheus/playbooks/`.
+See [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md) for the full lineage plan.
+
+## Upstream Authors and Copyright Holders
+
+### Strix — © Strix contributors
+- Licensed under the Apache License, Version 2.0
+- Source: <https://github.com/usestrix/strix>
+- Contribution: full original codebase that Prometheus was forked and
+  renamed from; agent runtime, CLI/TUI, sandbox lifecycle, multi-agent
+  orchestration, proxy/browser/terminal/Python tools, knowledge store.
+
+### Claude-BugHunter — © Sachin Sharma (ElementalSouls)
+- Licensed under the MIT License
+- Source: <https://github.com/elementalsouls/Claude-BugHunter>
+- Contribution: engagement-folder scaffold (`prometheus/engagement/`),
+  scope guardrail (`prometheus/engagement/scope.py`), 7-Question Gate
+  (`prometheus/core/seven_question_gate.py`), Always-Rejected matrix
+  (`prometheus/core/always_rejected.py`), Conditionally-Valid matrix
+  (`prometheus/core/conditionally_valid.py`), recon framework
+  (`prometheus/core/recon.py`), evidence-hygiene skill
+  (`prometheus/skills/evidence_hygiene.py`), and the seven hunt playbooks
+  under `prometheus/playbooks/`.
+
+### Visa Vulnerability Agentic Harness (VVAH) — © 2026 Visa, Inc.
+- Licensed under the Apache License, Version 2.0
+- Source: <https://github.com/visa/visa-vulnerability-agentic-harness>
+- Contribution: 9-stage pipeline shape (Discovery & Modeling → Deep Dive &
+  Verification → Synthesis, Chaining & Reporting), N-run deterministic
+  LLM voting (`prometheus/core/n_run_voting.py`), per-stage model
+  routing, `run_manifest.json` schema
+  (`prometheus/core/run_manifest.py`), and SARIF 2.1.0 emission
+  (`prometheus/report/`).
+
+## Third-Party Acknowledgments
+
+The Prometheus project additionally acknowledges the following
+upstream projects and their maintainers, whose work is consumed at
+runtime or build time:
+
+- **[LiteLLM](https://github.com/BerriAI/litellm)** — unified LLM
+  provider routing.
+- **[Caido](https://github.com/caido/caido)** — HTTP proxy SDK used for
+  request capture and replay.
+- **[Nuclei](https://github.com/projectdiscovery/nuclei)** — referenced
+  template format for reconnaissance.
+- **[Playwright](https://github.com/microsoft/playwright)** — headless
+  browser automation.
+- **[Textual](https://github.com/Textualize/textual)** — terminal UI
+  framework powering the interactive TUI.
+- **[VulnBot](https://arxiv.org/abs/2501.13411)** — the Penetration
+  Task Graph (PTG) planner is *inspired by* VulnBot's phase-based
+  pentest workflow.
+- **[shuvonsec/claude-bug-bounty](https://github.com/shuvonsec/claude-bug-bounty)** —
+  vendored as part of the Claude-BugHunter skill bundle.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to submit changes, and
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for community standards. New
+contributors are added to this file in their first merged pull request.
+
+A full list of code contributors is generated automatically by GitHub
+and is available under **Insights → Contributors** in the repository
+UI.

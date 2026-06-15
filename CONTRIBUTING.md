@@ -30,7 +30,7 @@ Thank you for your interest in contributing to prometheus! This guide will help 
 
 3. **Configure your LLM provider**
    ```bash
-   export prometheus_LLM="openai/gpt-5.4"
+   export PROMETHEUS_LLM="openai/gpt-5.4"
    export LLM_API_KEY="your-api-key"
    ```
 
