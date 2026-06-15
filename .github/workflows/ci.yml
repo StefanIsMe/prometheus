@@ -162,11 +162,19 @@ jobs:
         run: |
           # Only hard-gate the jobs that are not allowed to fail.
           # The type-check job is continue-on-error and serves as a
-          # surfacing mechanism, not a merge blocker.
-          for job in lint security test; do
-            if [ "${{ needs.$job.result }}" != "success" ]; then
-              echo "Required job '$job' did not pass (result: ${{ needs.$job.result }})."
-              exit 1
-            fi
-          done
+          # surfacing mechanism, not a merge blocker. Use literal job
+          # names so GitHub's workflow parser doesn't choke on the
+          # for-loop variable expansion.
+          if [ "${{ needs.lint.result }}" != "success" ]; then
+            echo "Required job 'lint' did not pass (result: ${{ needs.lint.result }})."
+            exit 1
+          fi
+          if [ "${{ needs.security.result }}" != "success" ]; then
+            echo "Required job 'security' did not pass (result: ${{ needs.security.result }})."
+            exit 1
+          fi
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "Required job 'test' did not pass (result: ${{ needs.test.result }})."
+            exit 1
+          fi
           echo "All required jobs passed."
