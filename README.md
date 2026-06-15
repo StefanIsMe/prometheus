@@ -18,7 +18,7 @@
 
 <br/>
 
-[Quick Start](#-quick-start) · [Documentation](docs/) · [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Disclaimer](DISCLAIMER.md) · [Changelog](CHANGELOG.md) · [Authors](AUTHORS)
+[Quick Start](#-quick-start) · [Documentation](docs/) · [Contributing](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · [Security](SECURITY.md) · [Disclaimer](DISCLAIMER.md) · [Changelog](CHANGELOG.md) · [Authors](AUTHORS)
 
 </div>
 
@@ -348,9 +348,11 @@ Open a [pull request](https://github.com/StefanIsMe/prometheus/pulls) or
   use of the software. **You assume all risk.** Use only against
   systems you own or have explicit written authorization to test.
 - **Code of Conduct:** [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- **Security policy:** file a private vulnerability report via the
-  contact in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) until a dedicated
-  `SECURITY.md` is published.
+- **Security policy:** see [SECURITY.md](SECURITY.md) — file a private
+  GitHub Security Advisory at
+  `https://github.com/StefanIsMe/prometheus/security/advisories/new`.
+  Only the latest release (v1.0.0) is supported; responses are
+  best-effort.
 - **Trademark:** "Prometheus" is the project name. The Prometheus
   trademark is not asserted on third-party forks or downstream
   distributions of this MIT-licensed code.
