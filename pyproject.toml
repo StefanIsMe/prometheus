@@ -3,10 +3,10 @@ name = "prometheus-agent"
 version = "1.0.0"
 description = "AI-powered security scanner, validator, and novel threat discoverer"
 readme = "README.md"
-license = "Apache-2.0"
+license = { text = "MIT" }
 requires-python = ">=3.12"
 authors = [
-  { name = "Prometheus", email = "stefan@withapurpose.co" },
+  { name = "Stefan Carter", email = "stefan@withapurpose.co" },
 ]
 keywords = [
   "cybersecurity",
@@ -23,7 +23,8 @@ classifiers = [
   "Intended Audience :: Information Technology",
   "Intended Audience :: System Administrators",
   "Topic :: Security",
-  "License :: OSI Approved :: Apache Software License",
+  "License :: OSI Approved :: MIT License",
+  "License :: Copyright :: 2026, Stefan Carter",
   "Environment :: Console",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
