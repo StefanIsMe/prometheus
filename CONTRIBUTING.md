@@ -15,7 +15,7 @@ Thank you for your interest in contributing to prometheus! This guide will help 
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/useprometheus/prometheus.git
+   git clone https://github.com/StefanIsMe/prometheus.git
    cd prometheus
    ```
 
@@ -101,16 +101,14 @@ We welcome feature ideas! Please:
 
 ## 🤝 Community
 
-- **Discord**: [Join our community](https://discord.gg/prometheus-ai)
-- **Issues**: [GitHub Issues](https://github.com/useprometheus/prometheus/issues)
+- **Issues**: [GitHub Issues](https://github.com/StefanIsMe/prometheus/issues)
 
 ## ✨ Recognition
 
 We value all contributions! Contributors will be:
 - Listed in release notes
-- Thanked in our Discord
 - Added to contributors list (coming soon)
 
 ---
 
-**Questions?** Reach out on [Discord](https://discord.gg/prometheus-ai) or create an issue. We're here to help!
+**Questions?** Open a GitHub issue and we'll help you get unstuck.

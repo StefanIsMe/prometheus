@@ -188,7 +188,6 @@ class ProgramsPanel(VerticalScroll):
         scope = program.get("scope", [])
         rewards = program.get("rewards", {})
         auto_scan = program.get("auto_scan_enabled", False)
-        scan_mode = program.get("scan_mode", "deep")
         instructions = program.get("instructions", "")
         notes = program.get("notes", "")
 
@@ -265,7 +264,7 @@ class ProgramsPanel(VerticalScroll):
         # Scan config
         if auto_scan:
             card_lines.append("")
-            card_lines.append(f"  Scan mode: {scan_mode}  |  Interval: {interval}h")
+            card_lines.append(f"  Mode: deep  |  Interval: {interval}h")
             card_lines.append(f"  Next scan: {next_display}")
             if instructions:
                 instr_preview = instructions[:100]
@@ -429,7 +428,6 @@ class TargetsPanel(VerticalScroll):
         had_vulns = sched_info.get("had_vulns", False)
 
         # Scan config
-        scan_mode = scan_config.get("scan_mode", "deep")
         instructions = scan_config.get("user_instructions", scan_config.get("instructions", ""))
         custom_headers = scan_config.get("custom_headers", [])
         targets_list = scan_config.get("targets", [])
@@ -447,7 +445,7 @@ class TargetsPanel(VerticalScroll):
             "  [red]Auto-scanning is disabled[/red]",
             "",
             "[bold]Scan Config:[/bold]",
-            f"  Mode: {scan_mode}  |  Headers: {len(custom_headers)} custom",
+            f"  Mode: deep  |  Headers: {len(custom_headers)} custom",
         ]
 
         # Show in-scope targets

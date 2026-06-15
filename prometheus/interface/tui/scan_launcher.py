@@ -87,18 +87,6 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
         background: #22c55e;
     }
 
-    #scan_mode {
-        background: transparent;
-        color: #d4d4d4;
-        border: round #333333;
-        margin: 0;
-        min-height: 3;
-    }
-
-    #scan_mode:focus {
-        border: round #22c55e;
-    }
-
     #scan_instructions {
         height: 3;
         background: #1a1a1a;
@@ -207,13 +195,6 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
                     id="scan_target",
                     placeholder="Enter target URL, domain, IP, or path",
                 ),
-                Label("Scan Mode", classes="scan-field-label"),
-                Select(
-                    [("Quick", "quick"), ("Standard", "standard"), ("Deep", "deep")],
-                    id="scan_mode",
-                    value="deep",
-                    allow_blank=False,
-                ),
                 Label("Instructions", classes="scan-field-label"),
                 TextArea(
                     id="scan_instructions",
@@ -270,7 +251,6 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
             self.query_one("#scan_target", TextArea).focus()
             return
 
-        scan_mode: str = self.query_one("#scan_mode", Select).value  # type: ignore[assignment]
         instructions = self.query_one("#scan_instructions", TextArea).text.strip()
         headers_text = self.query_one("#scan_headers", TextArea).text.strip()
         rate_limit: int = self.query_one("#scan_rate_limit", Select).value  # type: ignore[assignment]
@@ -290,7 +270,6 @@ class ScanLauncherScreen(ModalScreen[dict[str, Any] | None]):  # type: ignore[mi
 
         config: dict[str, Any] = {
             "target": target,
-            "scan_mode": scan_mode,
             "instructions": instructions,
             "custom_headers": custom_headers,
             "rate_limit": rate_limit,

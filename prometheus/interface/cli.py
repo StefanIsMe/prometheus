@@ -89,15 +89,12 @@ async def run_cli(args: Any) -> None:  # noqa: PLR0915
     console.print(startup_panel)
     console.print()
 
-    scan_mode = getattr(args, "scan_mode", "deep")
-
     scan_config: dict[str, Any] = {
         "scan_id": args.run_name,
         "targets": args.targets_info,
         "user_instructions": args.instruction or "",
         "run_name": args.run_name,
         "diff_scope": getattr(args, "diff_scope", {"active": False}),
-        "scan_mode": scan_mode,
         "non_interactive": bool(getattr(args, "non_interactive", False)),
         "local_sources": getattr(args, "local_sources", None) or [],
         "scope_mode": getattr(args, "scope_mode", "auto"),

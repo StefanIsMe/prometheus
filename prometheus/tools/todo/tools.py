@@ -217,8 +217,71 @@ def _apply_single_update(
     return None
 
 
-def _apply_bulk_status(todo_ids: list[str], new_status: str, agent_id: str) -> str:
-    """Apply a status change to multiple todos."""
+def _coerce_todo_ids(value: Any) -> list[str]:
+    """Coerce LLM-supplied ``todo_ids`` into a list of strings.
+
+    The OpenAI Agents SDK validates tool arguments against the JSON schema
+    generated from the function signature, so the tool body only ever runs
+    with a value that *already* parsed as ``list[str]``. But the LLM
+    occasionally produces a value the schema does not match — a single
+    string, a JSON object like ``{"ef84db": ""}``, or a comma-separated
+    string — and the SDK then raises an opaque pydantic validation error
+    ("Input should be a valid list [type=list_type, input_value=...]")
+    that the LLM has no clear way to recover from.
+
+    To make the tool resilient, we accept ``Any`` at the function level
+    and normalise here. The schema is also widened (see the tool
+    signatures below) to advertise ``string | array`` so the SDK is
+    willing to pass the raw value through. Returns an empty list if the
+    value cannot be coerced, so the caller surfaces a clear "non-empty
+    list required" error instead of a validation crash.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        out: list[str] = []
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
+            elif isinstance(item, (int, float)):
+                out.append(str(item))
+        return out
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        # If the LLM emitted a JSON-looking dict-as-string, try to parse it
+        # (the SDK has already parsed the outer envelope, so anything JSON
+        # arriving here is unusual but cheap to handle).
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                parsed = json.loads(stripped)
+                if isinstance(parsed, dict):
+                    return [str(k).strip() for k in parsed.keys() if str(k).strip()]
+            except json.JSONDecodeError:
+                pass
+        # Comma-separated string: "abc, def, ghi"
+        if "," in stripped:
+            return [piece.strip() for piece in stripped.split(",") if piece.strip()]
+        return [stripped]
+    if isinstance(value, dict):
+        # Dict like ``{"ef84db": ""}`` or ``{"ef84db": "done"}`` — treat
+        # the keys as the todo IDs. Values are ignored.
+        return [str(k).strip() for k in value.keys() if str(k).strip()]
+    if isinstance(value, (int, float)):
+        return [str(value)]
+    return []
+
+
+def _apply_bulk_status(todo_ids: Any, new_status: str, agent_id: str) -> str:
+    """Apply a status change to multiple todos.
+
+    ``todo_ids`` is ``Any`` at the boundary so the SDK lets us see what
+    the LLM actually emitted. We coerce it to a list of strings via
+    :func:`_coerce_todo_ids`; if the result is empty we return a clear
+    error rather than raising.
+    """
+    todo_ids = _coerce_todo_ids(todo_ids)
     agent_todos = _get_agent_todos(agent_id)
     if not todo_ids:
         return json.dumps(
@@ -454,33 +517,39 @@ async def update_todo(ctx: RunContextWrapper, updates: list[_UpdateTodoInput]) -
 
 
 @function_tool(timeout=30)
-async def mark_todo_completed(ctx: RunContextWrapper, todo_ids: list[str]) -> str:
+async def mark_todo_completed(ctx: RunContextWrapper, todo_ids: Any) -> str:
     """Mark one or more todos as done (completed).
 
     Args:
-        todo_ids: Array of todo IDs to mark done, e.g. ``["abc123", "def456"]``.
+        todo_ids: One or more todo IDs to mark done. Accepts the usual
+            ``["abc123", "def456"]`` array, a single string ``"abc123"``,
+            a comma-separated string ``"abc123, def456"``, or even a
+            JSON-object-shaped mistake like ``{"abc123": ""}`` (the keys
+            are treated as IDs). Empty / missing values surface a clear
+            "non-empty list required" error.
     """
     return _apply_bulk_status(todo_ids, "done", _agent_id_from(ctx))
 
 
 @function_tool(timeout=30)
-async def mark_todo_in_progress(ctx: RunContextWrapper, todo_ids: list[str]) -> str:
+async def mark_todo_in_progress(ctx: RunContextWrapper, todo_ids: Any) -> str:
     """Mark one or more todos as in progress.
 
     Args:
-        todo_ids: Array of todo IDs to mark in progress, e.g. ``["abc123", "def456"]``.
+        todo_ids: Same flexible shape as ``mark_todo_completed``.
     """
     return _apply_bulk_status(todo_ids, "in_progress", _agent_id_from(ctx))
 
 
 @function_tool(timeout=30)
-async def delete_todo(ctx: RunContextWrapper, todo_ids: list[str]) -> str:
+async def delete_todo(ctx: RunContextWrapper, todo_ids: Any) -> str:
     """Delete one or more todos. Removes them entirely (no soft-delete).
 
     Args:
-        todo_ids: Array of todo IDs to delete, e.g. ``["abc123", "def456"]``.
+        todo_ids: Same flexible shape as ``mark_todo_completed``.
     """
     agent_id = _agent_id_from(ctx)
+    todo_ids = _coerce_todo_ids(todo_ids)
     try:
         agent_todos = _get_agent_todos(agent_id)
         if not todo_ids:

@@ -498,7 +498,6 @@ class ScanOrchestrator:
 
             targets = [target_entry]
 
-        scan_mode = scan_config.get("scan_mode") or "deep"
         user_instructions = (
             scan_config.get("user_instructions")
             or scan_config.get("instructions")
@@ -507,7 +506,6 @@ class ScanOrchestrator:
 
         return {
             "targets": targets,
-            "scan_mode": scan_mode,
             "user_instructions": user_instructions,
             "skills": scan_config.get("skills") or list(DEFAULT_SKILLS),
             "non_interactive": True,  # orchestrator scans are always non-interactive

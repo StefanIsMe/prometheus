@@ -13,7 +13,7 @@ description: "Install Prometheus and run your first security scan"
 <Tabs>
   <Tab title="curl">
     ```bash
-    curl -sSL https://prometheus.ai/install | bash
+    git clone https://github.com/StefanIsMe/prometheus.git && cd prometheus && ./scripts/install.sh
     ```
   </Tab>
   <Tab title="pipx">
@@ -69,8 +69,5 @@ prometheus -t https://github.com/org/repo -t https://your-app.com
 <CardGroup cols={2}>
   <Card title="CLI Options" icon="terminal" href="/usage/cli">
     Explore all command-line options.
-  </Card>
-  <Card title="Scan Modes" icon="gauge" href="/usage/scan-modes">
-    Choose the right scan depth.
   </Card>
 </CardGroup>

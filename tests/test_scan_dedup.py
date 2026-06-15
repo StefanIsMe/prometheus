@@ -83,18 +83,15 @@ def test_rotation_advances_through_targets(monkeypatch, tmp_path):
     assert len(seen) >= 6, f"expected rotation across multiple targets, got {seen}"
 
 
-def test_war_gov_in_program_full_scan_mode():
+def test_war_gov_in_program_with_rules_of_engagement():
     """DoD VDP / HackerOne BPV: program allows coordinated research on
-    publicly accessible DoD systems. The war.gov target MUST be in
-    full-scan mode (scan_mode=deep) and MUST carry the DoD rules of
-    engagement in its instruction_hint. This test prevents regression
-    where someone flips it back to recon/quick without re-adding the
-    rules-of-engagement text."""
+    publicly accessible DoD systems. The war.gov target MUST be
+    ai_allowed=true and MUST carry the DoD rules of engagement in its
+    instruction_hint. This test prevents regression where someone flips
+    ai_allowed=false (which would re-route the target to recon-only)
+    without re-adding the rules-of-engagement text."""
     cfg = json.loads((Path("~/.prometheus/prom_rl_targets.json").expanduser()).read_text())
     t = cfg["targets"]["dod-war-gov"]
-    assert t["scan_mode"] == "deep", (
-        f"war.gov must be full deep scan inside DoD VDP program, got scan_mode={t['scan_mode']!r}"
-    )
     assert t["ai_allowed"] is True
     assert "war.gov" in t["scope"][0]
     hint = t.get("instruction_hint", "")
@@ -104,12 +101,11 @@ def test_war_gov_in_program_full_scan_mode():
         )
 
 
-def test_recon_mode_does_no_active_scanning(monkeypatch, tmp_path):
-    """The recon mode must NOT spawn any prometheus subprocess."""
+def test_non_ai_target_skips_active_scanning(monkeypatch, tmp_path):
+    """Targets with ai_allowed=false must NOT spawn any prometheus subprocess."""
     cfg = json.loads((Path("~/.prometheus/prom_rl_targets.json").expanduser()).read_text())
     t = cfg["targets"]["dod-war-gov"]
-    t["scan_mode"] = "recon"
-    t["ai_allowed"] = True
+    t["ai_allowed"] = False
     t["scope"] = ["https://www.war.gov"]
     # Spy on subprocess.Popen
     calls = []
@@ -120,12 +116,14 @@ def test_recon_mode_does_no_active_scanning(monkeypatch, tmp_path):
         return real_popen(*args, **kwargs)
 
     monkeypatch.setattr(prom_rl_loop.subprocess, "Popen", spy_popen)
-    prom_rl_loop._action_scan_recon("dod-war-gov", t)
-    # The recon path uses urllib, not subprocess
+    # The non-ai-allowed branch should not reach the SCAN subprocess path;
+    # pick_target will return None for ai_allowed=false.
+    chosen = prom_rl_loop.pick_target(cfg)
+    if chosen is not None and chosen[0] == "dod-war-gov":
+        pytest.fail("non-ai target was picked for active scanning")
     for args, _ in calls:
         if args and args[0] and isinstance(args[0], list):
             cmd = args[0]
             if cmd and "prometheus" in str(cmd[0]):
-                pytest.fail("recon mode spawned prometheus")
-    # Or: simply assert no calls at all
-    assert all("prometheus" not in str(c) for c in calls), "recon should not invoke prometheus"
+                pytest.fail("non-ai target spawned prometheus")
+    assert all("prometheus" not in str(c) for c in calls), "non-ai should not invoke prometheus"

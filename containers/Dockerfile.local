@@ -1,6 +1,6 @@
 # prometheus local sandbox — layers on prometheus for tool additions
 # Build: docker build -f containers/Dockerfile.local -t prometheus-sandbox:local .
-FROM ghcr.io/useprometheus/prometheus-sandbox:1.0.0
+FROM prometheus-sandbox:local
 
 USER root
 

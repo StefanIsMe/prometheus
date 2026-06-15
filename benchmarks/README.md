@@ -5,7 +5,7 @@ We use security benchmarks to track prometheus's capabilities and improvements o
 
 ## Full Details
 
-For the complete benchmark results, evaluation scripts, and run data, see the [useprometheus/benchmarks](https://github.com/useprometheus/benchmarks) repository.
+For the complete benchmark results, evaluation scripts, and run data, see the [StefanIsMe/prometheus-benchmarks](https://github.com/StefanIsMe/prometheus-benchmarks) repository.
 
 > [!NOTE]
 > We are actively adding more benchmarks to our evaluation suite.
@@ -15,11 +15,11 @@ For the complete benchmark results, evaluation scripts, and run data, see the [u
 
 | Benchmark | Challenges | Success Rate |
 |-----------|------------|--------------|
-| [XBEN](https://github.com/useprometheus/benchmarks/tree/main/XBEN) | 104 | **96%** |
+| [XBEN](https://github.com/StefanIsMe/prometheus-benchmarks/tree/main/XBEN) | 104 | **96%** |
 
 ### XBEN
 
-The [XBOW benchmark](https://github.com/useprometheus/benchmarks/tree/main/XBEN) is a set of 104 web security challenges designed to evaluate autonomous penetration testing agents. Each challenge follows a CTF format where the agent must discover and exploit vulnerabilities to extract a hidden flag.
+The [XBOW benchmark](https://github.com/StefanIsMe/prometheus-benchmarks/tree/main/XBEN) is a set of 104 web security challenges designed to evaluate autonomous penetration testing agents. Each challenge follows a CTF format where the agent must discover and exploit vulnerabilities to extract a hidden flag.
 
 prometheus `v0.4.0` achieved a **96% success rate** (100/104 challenges) in black-box mode.
 

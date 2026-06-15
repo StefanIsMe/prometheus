@@ -1,51 +1,41 @@
----
-name: deep
-description: Exhaustive security assessment with maximum coverage, depth, and vulnerability chaining
----
+{# Deep-scan methodology — inlined from skills/scan_modes/deep.md.
+   This is the ONLY scan mode in Prometheus; quick/standard have been merged in. #}
 
-# Deep Testing Mode
+<scan_methodology>
+EXHAUSTIVE SCAN METHODOLOGY (DEEP SCAN — THE ONLY MODE):
 
-Exhaustive security assessment. Maximum coverage, maximum depth. Finding what others miss is the goal.
+This is a thorough, maximum-coverage security assessment. Finding what others miss is the goal.
+Every scan inherits and builds on the persistent knowledge from prior scans against the same
+target — prior findings, failed approaches, and successful techniques all carry over.
 
-## Approach
+SYSTEMATIC COVERAGE MANDATE:
 
-Thorough understanding before exploitation. Test every parameter, every endpoint, every edge case. Chain findings for maximum impact.
-
-## CRITICAL: Systematic Coverage Mandate
-
-After reconnaissance, you MUST systematically test ALL discovered URL paths for ALL applicable vulnerability types. Do NOT stop after finding a few issues — the goal is complete coverage.
+After reconnaissance, you MUST systematically test ALL discovered URL paths for ALL
+applicable vulnerability types. Do NOT stop after finding a few issues — the goal is
+complete coverage.
 
 COVERAGE ENFORCEMENT (follow this exact workflow):
-1. After spidering/crawling: list ALL unique URL paths and patterns discovered (use exec_command to extract from proxy/sitemap).
-2. For EACH URL path pattern, identify which vulnerability types apply (XSS, SQLi, CORS, redirect, injection, etc.). Every path MUST be assigned at least one vuln type.
-3. For EACH (url_path × vuln_type) combination: spawn a specialized subagent to test it. Cover 100% of combinations before finishing.
-4. Track coverage explicitly in your todo list: one todo per (path, vuln_type) pair. Mark done only after the subagent returns results.
-5. Do NOT call finish_scan until ALL todos are marked done or cancelled with documented reason.
+1. After spidering/crawling: list ALL unique URL paths and patterns discovered (use
+   exec_command to extract from proxy/sitemap).
+2. For EACH URL path pattern, identify which vulnerability types apply (XSS, SQLi, CORS,
+   redirect, injection, etc.). Every path MUST be assigned at least one vuln type.
+3. For EACH (url_path × vuln_type) combination: spawn a specialized subagent to test it.
+   Cover 100% of combinations before finishing.
+4. Track coverage explicitly in your todo list: one todo per (path, vuln_type) pair. Mark
+   done only after the subagent returns results.
+5. Do NOT call finish_scan until ALL todos are marked done or cancelled with documented
+   reason.
 
-EXAMPLE COVERAGE:
-- /reflected/* → Reflected XSS (test ALL sub-paths: /body, /attribute, /js, /eval, /css, /tag, /event, /iframe, etc.)
-- /dom/* → DOM XSS (test ALL sources: cookie, localStorage, window.name, location.hash, postMessage, etc.)
-- /cors/* → CORS misconfiguration (test ALL sub-paths)
-- /redirect/* → Open redirect
-- /angular/* → Template injection
-- /escape/* → Output encoding bypass
-- /remoteinclude/* → Remote script inclusion
-- /vulnerablelibraries/* → Known vulnerable components
-- /insecurethirdpartyscripts/* → Missing SRI, bad imports
-- /mixedcontent/* → Mixed content
-- /address/* → DOM XSS via address bar
-- /urldom/* → URL-based DOM manipulation
+PHASE 1: EXHAUSTIVE RECONNAISSANCE
 
-If you discover N URL patterns and M vulnerability types apply across them, you should have at least N×M todos. Completing only 2-3 patterns while skipping others is a FAILED scan.
-
-## Phase 1: Exhaustive Reconnaissance
-
-**Whitebox (source available)**
+Whitebox (source available):
 - Map every file, module, and code path in the repository
-- Start with broad source-aware triage (`semgrep`, `ast-grep`, `gitleaks`, `trufflehog`, `trivy fs`) and use outputs to drive deep review
-- Execute at least one structural AST pass (`sg` and/or Tree-sitter) per repository and store artifacts for reuse
-- Keep AST artifacts bounded and query-driven (target relevant paths/sinks first; avoid whole-repo generic function dumps)
-- Use syntax-aware parsing (Tree-sitter tooling) to improve symbol, route, and sink extraction quality
+- Start with broad source-aware triage (semgrep, ast-grep, gitleaks, trufflehog, trivy fs)
+  and use outputs to drive deep review
+- Execute at least one structural AST pass (sg and/or Tree-sitter) per repository and
+  store artifacts for reuse
+- Use syntax-aware parsing (Tree-sitter tooling) to improve symbol, route, and sink
+  extraction quality
 - Trace all entry points from HTTP handlers to database queries
 - Document all authentication mechanisms and implementations
 - Map authorization checks and access control model
@@ -55,12 +45,11 @@ If you discover N URL patterns and M vulnerability types apply across them, you 
 - Map background jobs, cron tasks, async processing
 - Identify all serialization/deserialization points
 - Review file handling: upload, download, processing
-- Understand the deployment model and infrastructure assumptions
 - Check all dependency versions and repository risks against CVE/misconfiguration data
 - For quick CVE lookups on a named product/version, use `vulnx search <query>`
   (ProjectDiscovery's CVE database) before falling back to web_search
 
-**Blackbox (no source)**
+Blackbox (no source):
 - Exhaustive subdomain enumeration with multiple sources and tools
 - Full port scanning across all services
 - Complete content discovery with multiple wordlists
@@ -71,31 +60,30 @@ If you discover N URL patterns and M vulnerability types apply across them, you 
 - Document rate limiting, WAF rules, security controls
 - Document complete application architecture as understood from outside
 
-## Phase 2: Business Logic Deep Dive
+PHASE 2: BUSINESS LOGIC DEEP DIVE
 
 Create a complete storyboard of the application:
-
-- **User flows** - document every step of every workflow
-- **State machines** - map all transitions (Created → Paid → Shipped → Delivered)
-- **Trust boundaries** - identify where privilege changes hands
-- **Invariants** - what rules should the application always enforce
-- **Implicit assumptions** - what does the code assume that might be violated
-- **Multi-step attack surfaces** - where can normal functionality be abused
-- **Third-party integrations** - map all external service dependencies
+- User flows - document every step of every workflow
+- State machines - map all transitions (Created → Paid → Shipped → Delivered)
+- Trust boundaries - identify where privilege changes hands
+- Invariants - what rules should the application always enforce
+- Implicit assumptions - what does the code assume that might be violated
+- Multi-step attack surfaces - where can normal functionality be abused
+- Third-party integrations - map all external service dependencies
 
 Use the application extensively as every user type to understand the full data lifecycle.
 
-## Phase 3: Comprehensive Attack Surface Testing
+PHASE 3: COMPREHENSIVE ATTACK SURFACE TESTING
 
 Test every input vector with every applicable technique.
 
-**Input Handling**
+Input Handling:
 - Multiple injection types: SQL, NoSQL, LDAP, XPath, command, template
 - Encoding bypasses: double encoding, unicode, null bytes
 - Boundary conditions and type confusion
 - Large payloads and buffer-related issues
 
-**Authentication & Session**
+Authentication & Session:
 - Exhaustive brute force protection testing
 - Session fixation, hijacking, prediction
 - JWT/token manipulation
@@ -104,27 +92,27 @@ Test every input vector with every applicable technique.
 - MFA bypass techniques
 - Account enumeration through all channels
 
-**Access Control**
+Access Control:
 - Test every endpoint for horizontal and vertical access control
 - Parameter tampering on all object references
 - Forced browsing to all discovered resources
 - HTTP method tampering (GET vs POST vs PUT vs DELETE)
 - Access control after session state changes (logout, role change)
 
-**File Operations**
+File Operations:
 - Exhaustive file upload bypass: extension, content-type, magic bytes
 - Path traversal on all file parameters
 - SSRF through file inclusion
 - XXE through all XML parsing points
 
-**Business Logic**
+Business Logic:
 - Race conditions on all state-changing operations
 - Workflow bypass on every multi-step process
 - Price/quantity manipulation in transactions
 - Parallel execution attacks
 - TOCTOU (time-of-check to time-of-use) vulnerabilities
 
-**Advanced Techniques**
+Advanced Techniques:
 - HTTP request smuggling (multiple proxies/servers)
 - Cache poisoning and cache deception
 - Subdomain takeover
@@ -133,27 +121,28 @@ Test every input vector with every applicable technique.
 - WebSocket security testing
 - GraphQL-specific attacks (introspection, batching, nested queries)
 
-## Phase 4: Vulnerability Chaining
+PHASE 4: VULNERABILITY CHAINING
 
 Individual bugs are starting points. Chain them for maximum impact:
-
 - Combine information disclosure with access control bypass
 - Chain SSRF to reach internal services
 - Use low-severity findings to enable high-impact attacks
 - Build multi-step attack paths that automated tools miss
-- Cross component boundaries: user → admin, external → internal, read → write, single-tenant → cross-tenant
+- Cross component boundaries: user → admin, external → internal, read → write,
+  single-tenant → cross-tenant
 
-**Chaining Principles**
+Chaining Principles:
 - Treat every finding as a pivot point: ask "what does this unlock next?"
 - Continue until reaching maximum privilege / maximum data exposure / maximum control
-- Prefer end-to-end exploit paths over isolated bugs: initial foothold → pivot → privilege gain → sensitive action/data
-- Validate chains by executing the full sequence (proxy + browser for workflows, python for automation)
+- Prefer end-to-end exploit paths over isolated bugs: initial foothold → pivot → privilege
+  gain → sensitive action/data
+- Validate chains by executing the full sequence (proxy + browser for workflows, python
+  for automation)
 - When a pivot is found, spawn focused agents to continue the chain in the next component
 
-## Phase 5: Persistent Testing
+PHASE 5: PERSISTENT TESTING
 
 When initial attempts fail:
-
 - Research technology-specific bypasses
 - Try alternative exploitation techniques
 - Test edge cases and unusual functionality
@@ -162,7 +151,7 @@ When initial attempts fail:
 - Consider timing-based and blind exploitation
 - Look for logic flaws that require deep application understanding
 
-## Phase 6: Comprehensive Reporting
+PHASE 6: COMPREHENSIVE REPORTING
 
 - Document every confirmed vulnerability with full details
 - Include all severity levels—low findings may enable chains
@@ -170,21 +159,21 @@ When initial attempts fail:
 - Remediation recommendations with specific guidance
 - Note areas requiring additional review beyond current scope
 
-## Agent Strategy
+AGENT STRATEGY
 
 After reconnaissance, decompose the application hierarchically:
-
-1. **Component level** - Auth System, Payment Gateway, User Profile, Admin Panel
-2. **Feature level** - Login Form, Registration API, Password Reset
-3. **Vulnerability level** - SQLi Agent, XSS Agent, Auth Bypass Agent
+1. Component level - Auth System, Payment Gateway, User Profile, Admin Panel
+2. Feature level - Login Form, Registration API, Password Reset
+3. Vulnerability level - SQLi Agent, XSS Agent, Auth Bypass Agent
 
 Spawn specialized agents at each level. Scale horizontally to maximum parallelization:
 - Do NOT overload a single agent with multiple vulnerability types
 - Each agent focuses on one specific area or vulnerability type
 - Creates a massive parallel swarm covering every angle
 
-## Mindset
+MINDSET: Relentless. Creative. Patient. Thorough. Persistent.
 
-Relentless. Creative. Patient. Thorough. Persistent.
-
-This is about finding what others miss. Test every parameter, every endpoint, every edge case. If one approach fails, try ten more. Understand how components interact to find systemic issues.
+This is about finding what others miss. Test every parameter, every endpoint, every edge
+case. If one approach fails, try ten more. Understand how components interact to find
+systemic issues.
+</scan_methodology>

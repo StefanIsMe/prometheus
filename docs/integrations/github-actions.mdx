@@ -22,13 +22,13 @@ jobs:
           fetch-depth: 0
 
       - name: Install Prometheus
-        run: curl -sSL https://prometheus.ai/install | bash
+        run: ./scripts/install.sh
 
       - name: Run Security Scan
         env:
           PROMETHEUS_LLM: ${{ secrets.PROMETHEUS_LLM }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-        run: prometheus -n -t ./ --scan-mode quick
+        run: prometheus -n -t ./
 ```
 
 ## Required Secrets

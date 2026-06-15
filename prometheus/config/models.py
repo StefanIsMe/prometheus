@@ -17,7 +17,7 @@ from prometheus.config.llm_config import (
     apply_model_to_sdk,
     get_config,
     resolve_model,
-    scan_mode_to_tier,
+    resolve_tier,
     should_set_tool_choice,
 )
 
@@ -55,8 +55,6 @@ def _patch_httpx_no_zstd() -> None:
 
 def configure_sdk_model_defaults(
     settings: Settings | None = None,
-    *,
-    scan_mode: str = "",
 ) -> ResolvedModel:
     """Configure the OpenAI Agents SDK from Prometheus LLM config.
 
@@ -65,17 +63,11 @@ def configure_sdk_model_defaults(
 
     Args:
         settings: Prometheus settings object (updated in-place).
-        scan_mode: Override scan mode ("quick", "standard", "deep").
-                   If empty, reads from settings.scan.scan_mode, defaults to "deep".
     """
     global _current_resolution
 
     config = get_config()
-
-    # Determine tier: explicit scan_mode arg > settings > default "deep"
-    _mode = scan_mode or str(getattr(getattr(settings, "scan", None), "scan_mode", None) or "deep")
-    tier = scan_mode_to_tier(_mode)
-
+    tier = resolve_tier()
     resolution = resolve_model(config, tier=tier)
     apply_model_to_sdk(resolution)
     _current_resolution = resolution
@@ -109,7 +101,7 @@ def get_child_agent_resolution() -> ResolvedModel | None:
     """
     try:
         config = get_config()
-        return resolve_model(config, tier=scan_mode_to_tier("quick", is_child=True))
+        return resolve_model(config, tier=resolve_tier(is_child=True))
     except Exception as exc:
         logger.warning("Child agent model resolution failed: %s", exc)
         return None

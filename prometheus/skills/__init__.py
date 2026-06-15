@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 _FRONTMATTER_PATTERN = re.compile(r"^---\s*\n.*?\n---\s*\n", re.DOTALL)
 
-_INTERNAL_SKILL_CATEGORIES: frozenset[str] = frozenset({"scan_modes", "coordination"})
+_INTERNAL_SKILL_CATEGORIES: frozenset[str] = frozenset({"coordination"})
 
 
 def _iter_user_skill_files() -> Iterator[tuple[str, str]]:

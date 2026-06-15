@@ -6,7 +6,7 @@ Config lives at ~/.prometheus/llm.yaml.
 
 Architecture:
   1. Providers declare base_url, protocol, API keys, available models
-  2. Router maps scan_mode tiers (simple/medium/hard) to model candidates
+  2. Router maps model tiers (simple/hard) to model candidates
   3. Runner resolves a model at scan start, falls back on failure
   4. Anthropic-protocol providers are auto-converted to OpenAI Chat-Completions
 """
@@ -578,21 +578,16 @@ def report_key_failure(resolved: ResolvedModel) -> None:
 # Scan mode → tier mapping
 # ---------------------------------------------------------------------------
 
-def scan_mode_to_tier(scan_mode: str, *, is_child: bool = False) -> Tier:
-    """Map scan mode string to a model tier.
+def resolve_tier(*, is_child: bool = False) -> Tier:
+    """Return the model tier for the current scan.
 
-    Child agents always use SIMPLE tier (they do narrow, well-scoped tasks).
+    Prometheus runs a single scan mode (deep, exhaustive). The root
+    agent always uses HARD; child agents always use SIMPLE because they
+    do narrow, well-scoped tasks.
     """
     if is_child:
         return Tier.SIMPLE
-
-    mode = scan_mode.lower().strip()
-    if mode in ("quick", "fast"):
-        return Tier.SIMPLE
-    elif mode in ("standard", "medium", "normal"):
-        return Tier.MEDIUM
-    else:  # deep, thorough, or unknown
-        return Tier.HARD
+    return Tier.HARD
 
 
 # ---------------------------------------------------------------------------

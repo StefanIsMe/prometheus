@@ -10,13 +10,13 @@ Prometheus runs in headless mode for automated pipelines.
 Use the `-n` or `--non-interactive` flag:
 
 ```bash
-prometheus -n --target ./app --scan-mode quick
+prometheus -n --target ./app
 ```
 
-For pull-request style CI runs, Prometheus automatically scopes quick scans to changed files. You can force this behavior and set a base ref explicitly:
+For pull-request style CI runs, Prometheus automatically scopes scans to changed files. You can force this behavior and set a base ref explicitly:
 
 ```bash
-prometheus -n --target ./app --scan-mode quick --scope-mode diff --diff-base origin/main
+prometheus -n --target ./app --scope-mode diff --diff-base origin/main
 ```
 
 ## Exit Codes
@@ -38,8 +38,8 @@ security-scan:
     PROMETHEUS_LLM: $PROMETHEUS_LLM
     LLM_API_KEY: $LLM_API_KEY
   script:
-    - curl -sSL https://prometheus.ai/install | bash
-    - prometheus -n -t ./ --scan-mode quick
+    - git clone https://github.com/StefanIsMe/prometheus.git && ./scripts/install.sh
+    - prometheus -n -t ./
 ```
 
 ## Jenkins
@@ -54,8 +54,8 @@ pipeline {
     stages {
         stage('Security Scan') {
             steps {
-                sh 'curl -sSL https://prometheus.ai/install | bash'
-                sh 'prometheus -n -t ./ --scan-mode quick'
+                sh './scripts/install.sh'
+                sh 'prometheus -n -t ./'
             }
         }
     }
@@ -75,10 +75,10 @@ jobs:
       - setup_remote_docker
       - run:
           name: Install Prometheus
-          command: curl -sSL https://prometheus.ai/install | bash
+          command: ./scripts/install.sh
       - run:
           name: Run Scan
-          command: prometheus -n -t ./ --scan-mode quick
+          command: prometheus -n -t ./
 ```
 
 <Note>

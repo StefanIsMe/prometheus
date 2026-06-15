@@ -550,7 +550,6 @@ class CVEWatcher:
 
             scan_config = {
                 "instructions": instruction,
-                "scan_mode": "focused",
             }
 
             scan_id = orchestrator.launch_scan(

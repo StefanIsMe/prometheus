@@ -379,21 +379,6 @@ Examples:
     )
 
     parser.add_argument(
-        "-m",
-        "--scan-mode",
-        type=str,
-        choices=["quick", "standard", "deep"],
-        default="deep",
-        help=(
-            "Scan mode: "
-            "'quick' for fast CI/CD checks, "
-            "'standard' for routine testing, "
-            "'deep' for thorough security reviews (default). "
-            "Default: deep."
-        ),
-    )
-
-    parser.add_argument(
         "--scope-mode",
         type=str,
         choices=["auto", "diff", "full"],
@@ -537,7 +522,6 @@ def _persist_run_record(args: argparse.Namespace) -> None:
         "start_time": datetime.now(UTC).isoformat(),
         "end_time": None,
         "targets_info": args.targets_info,
-        "scan_mode": args.scan_mode,
         "instruction": args.instruction,
         "non_interactive": args.non_interactive,
         "local_sources": getattr(args, "local_sources", []),
@@ -589,9 +573,6 @@ def _load_resume_state(args: argparse.Namespace, parser: argparse.ArgumentParser
         args.local_sources = state.get("local_sources")
     if state.get("diff_scope"):
         args.diff_scope = state.get("diff_scope")
-    persisted_scan_mode = state.get("scan_mode")
-    if persisted_scan_mode and args.scan_mode == "deep":
-        args.scan_mode = persisted_scan_mode
     if not getattr(args, "custom_headers", None):
         args.custom_headers = state.get("custom_headers") or []
 
@@ -659,9 +640,7 @@ def display_completion_message(args: argparse.Namespace, results_path: Path) -> 
     console.print(panel)
     console.print()
     console.print(
-        "[#60a5fa]prometheus.ai[/]  [dim]·[/]  "
-        "[#60a5fa]docs.prometheus.ai[/]  [dim]·[/]  "
-        "[#60a5fa]discord.gg/prometheus-ai[/]"
+        "[#60a5fa]prometheus[/]"
     )
     console.print()
 
@@ -842,7 +821,6 @@ def main() -> None:
 
             scan_config = {
                 "targets": targets_list,
-                "scan_mode": scan["mode"],
                 "user_instructions": scan["instruction"],
                 "custom_headers": scan["headers"],
             }
@@ -912,7 +890,7 @@ def main() -> None:
             try:
                 import subprocess
                 result = subprocess.run(
-                    ["docker", "ps", "--filter", "ancestor=ghcr.io/useprometheus/prometheus-sandbox:1.0.0",
+                    ["docker", "ps", "--filter", "ancestor=prometheus-sandbox:local",
                      "--format", "{{.ID}}"],
                     capture_output=True, text=True, timeout=10,
                 )
@@ -1097,7 +1075,6 @@ def main() -> None:
 
     _telemetry_start_kwargs = {
         "model": load_settings().llm.model,
-        "scan_mode": args.scan_mode,
         "is_whitebox": is_whitebox_scan(args.targets_info),
         "interactive": not args.non_interactive,
         "has_instructions": bool(args.instruction),

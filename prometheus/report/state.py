@@ -282,7 +282,6 @@ class ReportState:
             {
                 "targets_info": config.get("targets", []),
                 "instruction": config.get("user_instructions", ""),
-                "scan_mode": config.get("scan_mode", "deep"),
                 "diff_scope": config.get("diff_scope", {"active": False}),
                 "non_interactive": bool(config.get("non_interactive", False)),
                 "local_sources": config.get("local_sources", []),

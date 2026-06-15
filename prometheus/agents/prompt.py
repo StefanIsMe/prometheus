@@ -20,7 +20,6 @@ _PROMPT_DIRNAME = "prompts"
 def _resolve_skills(
     *,
     requested: list[str] | None,
-    scan_mode: str = "deep",
     is_whitebox: bool = False,
     is_root: bool = False,
     compress: bool = False,
@@ -30,9 +29,9 @@ def _resolve_skills(
     Order:
 
     1. Whatever the caller asked for, in order.
-    2. ``scan_modes/<mode>`` (always).
-    3. ``tooling/agent_browser`` (always — every agent has shell + the
+    2. ``tooling/agent_browser`` (always — every agent has shell + the
        agent-browser CLI).
+    3. ``tooling/browser_harness`` (always — required for the agent-browser).
     4. ``tooling/python`` (always — Python runs through ``exec_command``;
        sandbox scripts can import ``caido_api`` for Caido automation).
     5. ``coordination/root_agent`` for the root agent only — orchestration
@@ -40,12 +39,12 @@ def _resolve_skills(
     6. Whitebox-specific skills if applicable.
 
     Phase 3: When ``compress`` is True, only load essential skills
-    (scan_mode, tooling, coordination). Vulnerability skills are skipped
-    and can be loaded on-demand via the ``load_skill`` tool.
+    (tooling, coordination). Vulnerability skills are skipped and can
+    be loaded on-demand via the ``load_skill`` tool.
     """
     # Essential skills that are always loaded
     _ESSENTIAL_SKILLS = {
-        "scan_modes", "tooling", "coordination", "custom",
+        "tooling", "coordination", "custom",
     }
 
     ordered: list[str] = list(requested or [])
@@ -72,7 +71,6 @@ def _resolve_skills(
                 filtered.append(skill)
         ordered = filtered
 
-    ordered.append(f"scan_modes/{scan_mode}")
     ordered.append("tooling/agent_browser")
     ordered.append("tooling/browser_harness")
     ordered.append("tooling/python")
@@ -94,7 +92,6 @@ def _resolve_skills(
 def render_system_prompt(
     *,
     skills: list[str] | None = None,
-    scan_mode: str = "deep",
     is_whitebox: bool = False,
     is_root: bool = False,
     interactive: bool = False,
@@ -115,7 +112,6 @@ def render_system_prompt(
 
         skills_to_load = _resolve_skills(
             requested=skills,
-            scan_mode=scan_mode,
             is_whitebox=is_whitebox,
             is_root=is_root,
             compress=compress,
@@ -136,8 +132,7 @@ def render_system_prompt(
         raise
     else:
         logger.debug(
-            "render_system_prompt: scan_mode=%s root=%s whitebox=%s skills=%d prompt_len=%d",
-            scan_mode,
+            "render_system_prompt: root=%s whitebox=%s skills=%d prompt_len=%d",
             is_root,
             is_whitebox,
             len(skill_content),

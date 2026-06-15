@@ -175,12 +175,6 @@ class SplashScreen(Static):  # type: ignore[misc]
                     )
                     if len(target_names) > 3:
                         scan_text.append(f" (+{len(target_names) - 3} more)", style=Style(color="#737373"))
-                    scan_text.append("\n")
-                    scan_text.append("Mode: ", style=Style(color="white", dim=True))
-                    scan_text.append(
-                        str(getattr(args, "scan_mode", "deep")).upper(),
-                        style=Style(color="#4ade80", bold=True),
-                    )
                     content_parts.append(Align.center(scan_text))
                     content_parts.append(Align.center(Text(" ")))
         except Exception:
@@ -777,7 +771,6 @@ class prometheusTUIApp(App):  # type: ignore[misc]
             "user_instructions": args.instruction or "",
             "run_name": args.run_name,
             "diff_scope": getattr(args, "diff_scope", {"active": False}),
-            "scan_mode": getattr(args, "scan_mode", "deep"),
             "non_interactive": bool(getattr(args, "non_interactive", False)),
             "local_sources": getattr(args, "local_sources", None) or [],
             "scope_mode": getattr(args, "scope_mode", "auto"),
@@ -829,7 +822,7 @@ class prometheusTUIApp(App):  # type: ignore[misc]
             try:
                 import subprocess
                 result = subprocess.run(
-                    ["docker", "ps", "--filter", "ancestor=ghcr.io/useprometheus/prometheus-sandbox:1.0.0",
+                    ["docker", "ps", "--filter", "ancestor=prometheus-sandbox:local",
                      "--format", "{{.ID}}"],
                     capture_output=True, text=True, timeout=10,
                 )
@@ -1063,7 +1056,6 @@ class prometheusTUIApp(App):  # type: ignore[misc]
             "user_instructions": result.get("instructions", ""),
             "run_name": run_name,
             "diff_scope": {"active": False},
-            "scan_mode": result.get("scan_mode", "deep"),
             "non_interactive": False,
             "local_sources": [],
             "scope_mode": "auto",
@@ -1244,8 +1236,7 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         # Header
         target_names = [t.get("original", "?") for t in self.scan_config.get("targets", [])]
         targets_str = ", ".join(target_names) if target_names else "starting"
-        scan_mode = self.scan_config.get("scan_mode", "deep")
-        text.append(f"Starting {scan_mode} scan of ", style="dim")
+        text.append(f"Starting deep scan of ", style="dim")
         text.append(targets_str, style="bold white")
         text.append("\n\n")
 

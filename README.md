@@ -1,7 +1,5 @@
 <p align="center">
-  <a href="https://prometheus.ai/">
-    <img src="https://github.com/useprometheus/.github/raw/main/imgs/cover.png" alt="prometheus Banner" width="100%">
-  </a>
+  <img src=".github/cover.png" alt="prometheus Banner" width="100%">
 </p>
 
 <div align="center">
@@ -13,26 +11,15 @@
 <br/>
 
 
-<a href="https://docs.prometheus.ai"><img src="https://img.shields.io/badge/Docs-docs.prometheus.ai-2b9246?style=for-the-badge&logo=gitbook&logoColor=white" alt="Docs"></a>
-<a href="https://prometheus.ai"><img src="https://img.shields.io/badge/Website-prometheus.ai-f0f0f0?style=for-the-badge&logoColor=000000" alt="Website"></a>
-
-
-<a href="https://deepwiki.com/useprometheus/prometheus"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
-<a href="https://github.com/useprometheus/prometheus"><img src="https://img.shields.io/github/stars/useprometheus/prometheus?style=flat-square" alt="GitHub Stars"></a>
+<a href="https://github.com/StefanIsMe/prometheus"><img src="https://img.shields.io/github/stars/StefanIsMe/prometheus?style=flat-square" alt="GitHub Stars"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-3b82f6?style=flat-square" alt="License"></a>
 <a href="https://pypi.org/project/prometheus-agent/"><img src="https://img.shields.io/pypi/v/prometheus-agent?style=flat-square" alt="PyPI Version"></a>
-
-
-<a href="https://discord.gg/prometheus-ai"><img src="https://github.com/useprometheus/.github/raw/main/imgs/Discord.png" height="40" alt="Join Discord"></a>
-<a href="https://x.com/prometheus_ai"><img src="https://github.com/useprometheus/.github/raw/main/imgs/X.png" height="40" alt="Follow on X"></a>
-
 
 
 </div>
 
 
 > [!TIP]
-> **New!** prometheus integrates seamlessly with GitHub Actions and CI/CD pipelines. Automatically scan for vulnerabilities on every pull request and block insecure code before it reaches production - [Get started with no setup required](https://app.prometheus.ai).
 
 ---
 
@@ -54,9 +41,7 @@ prometheus are autonomous AI agents that act just like real hackers - they run y
 
 
 <div align="center">
-  <a href="https://prometheus.ai">
-    <img src=".github/screenshot.png" alt="prometheus Demo" width="1000" style="border-radius: 16px;">
-  </a>
+  <img src=".github/screenshot.png" alt="prometheus Demo" width="1000" style="border-radius: 16px;">
 </div>
 
 
@@ -71,13 +56,13 @@ prometheus are autonomous AI agents that act just like real hackers - they run y
 
 **Prerequisites:**
 - Docker (running)
-- An LLM API key from any [supported provider](https://docs.prometheus.ai/llm-providers/overview) (OpenAI, Anthropic, Google, etc.)
+- An LLM API key from any supported LLM provider (OpenAI, Anthropic, Google, etc.)
 
 ### Installation & First Scan
 
 ```bash
 # Install prometheus
-curl -sSL https://prometheus.ai/install | bash
+curl -sSL https://raw.githubusercontent.com/StefanIsMe/prometheus/main/scripts/install.sh | bash
 
 # Configure your AI provider
 export prometheus_LLM="openai/gpt-5.4"
@@ -89,20 +74,6 @@ prometheus --target ./app-directory
 
 > [!NOTE]
 > First run automatically pulls the sandbox Docker image. Results are saved to `prometheus_runs/<run-name>`
-
----
-
-## ☁️ prometheus Platform
-
-Try the prometheus full-stack security platform at **[app.prometheus.ai](https://app.prometheus.ai)** — sign up for free, connect your repos and domains, and launch a pentest in minutes.
-
-- **Validated findings with PoCs** and reproduction steps
-- **One-click autofix** as ready-to-merge pull requests
-- **Continuous monitoring** across code, cloud, and infrastructure
-- **Integrations** with GitHub, Slack, Jira, Linear, and CI/CD pipelines
-- **Continuous learning** that builds on past findings and remediations
-
-[**Start your first pentest →**](https://app.prometheus.ai)
 
 ---
 
@@ -167,7 +138,7 @@ prometheus --target https://your-app.com --instruction "Perform authenticated te
 prometheus -t https://github.com/org/app -t https://your-app.com
 
 # White-box source-aware scan (local repository)
-prometheus --target ./app-directory --scan-mode standard
+prometheus --target ./app-directory
 
 # Focused testing with custom instructions
 prometheus --target api.your-app.com --instruction "Focus on business logic flaws and IDOR vulnerabilities"
@@ -176,7 +147,7 @@ prometheus --target api.your-app.com --instruction "Focus on business logic flaw
 prometheus --target api.your-app.com --instruction-file ./instruction.md
 
 # Force PR diff-scope against a specific base branch
-prometheus -n --target ./ --scan-mode quick --scope-mode diff --diff-base origin/main
+prometheus -n --target ./ --scope-mode diff --diff-base origin/main
 ```
 
 ### Headless Mode
@@ -206,14 +177,14 @@ jobs:
           fetch-depth: 0
 
       - name: Install prometheus
-        run: curl -sSL https://prometheus.ai/install | bash
+        run: curl -sSL https://raw.githubusercontent.com/StefanIsMe/prometheus/main/scripts/install.sh | bash
 
       - name: Run prometheus
         env:
           prometheus_LLM: ${{ secrets.prometheus_LLM }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
 
-        run: prometheus -n -t ./ --scan-mode quick
+        run: prometheus -n -t ./
 ```
 
 > [!TIP]
@@ -242,23 +213,15 @@ export prometheus_REASONING_EFFORT="high"  # control thinking effort (default: h
 - [Anthropic Claude Sonnet 4.6](https://claude.com/platform/api) — `anthropic/claude-sonnet-4-6`
 - [Google Gemini 3 Pro Preview](https://cloud.google.com/vertex-ai) — `vertex_ai/gemini-3-pro-preview`
 
-See the [LLM Providers documentation](https://docs.prometheus.ai/llm-providers/overview) for all supported providers including Vertex AI, Bedrock, Azure, and local models.
-
-## Enterprise
-
-Get the same prometheus experience with [enterprise-grade](https://prometheus.ai/demo) controls: SSO (SAML/OIDC), custom compliance reports, dedicated support & SLA, custom deployment options (VPC/self-hosted), BYOK model support, and tailored agents optimized for your environment. [Learn more](https://prometheus.ai/demo).
+See the in-repo `docs/llm-providers/` directory for all supported providers including Vertex AI, Bedrock, Azure, and local models.
 
 ## Documentation
 
-Full documentation is available at **[docs.prometheus.ai](https://docs.prometheus.ai)** — including detailed guides for usage, CI/CD integrations, skills, and advanced configuration.
+Full documentation is available in the [`docs/`](docs/) directory — including detailed guides for usage, CI/CD integrations, skills, and advanced configuration.
 
 ## Contributing
 
-We welcome contributions of code, docs, and new skills - check out our [Contributing Guide](https://docs.prometheus.ai/contributing) to get started or open a [pull request](https://github.com/useprometheus/prometheus/pulls)/[issue](https://github.com/useprometheus/prometheus/issues).
-
-## Join Our Community
-
-Have questions? Found a bug? Want to contribute? **[Join our Discord!](https://discord.gg/prometheus-ai)**
+We welcome contributions of code, docs, and new skills - check out our [Contributing Guide](CONTRIBUTING.md) to get started or open a [pull request](https://github.com/StefanIsMe/prometheus/pulls)/[issue](https://github.com/StefanIsMe/prometheus/issues).
 
 ## Support the Project
 

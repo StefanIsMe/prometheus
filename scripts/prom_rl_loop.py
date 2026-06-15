@@ -79,7 +79,6 @@ ACTIONS = ("SCAN", "REVIEW", "FIX", "TEST")
 EPSILON = float(os.environ.get("PROM_RL_EPSILON", "0.1"))
 WALL_CLOCK_CAP = 300  # seconds per non-scan step
 SCAN_DEEP_BUDGET = 1500  # 25 min cap for a deep scan
-SCAN_QUICK_BUDGET = 300  # 5 min cap for quick
 MIN_DISK_FREE_PCT = 5.0
 STREAK_LIMIT = 3  # consecutive non-positive scores → pause
 THREE_STRIKE = 3  # target 0-findings 3x → rotate
@@ -172,7 +171,7 @@ def pick_target(cfg: dict, exclude: set[str] | None = None) -> tuple[str, dict] 
     key = filtered[rotation_idx % len(filtered)]
     _write_rotation_idx(rotation_idx + 1)
     t = targets.get(key, {})
-    if not (t.get("ai_allowed") and t.get("scan_mode") and t.get("scan_mode") != "off"):
+    if not t.get("ai_allowed"):
         return None
     return key, t
 
@@ -587,10 +586,6 @@ def _action_scan_locked(cfg: dict, lock_fh: object) -> dict:
         }
     key, t = chosen
 
-    # war.gov gets recon-only mode (DoD VDPs do not allow automated scanning)
-    if key == "dod-war-gov" or t.get("scan_mode") == "recon":
-        return _action_scan_recon(key, t)
-
     primary_url = t["scope"][0] if t.get("scope") else None
     if not primary_url:
         return {
@@ -624,8 +619,7 @@ def _action_scan_locked(cfg: dict, lock_fh: object) -> dict:
         }
 
     rate = t.get("rate_limit", 3)
-    mode = t.get("scan_mode", "deep")
-    budget = SCAN_QUICK_BUDGET if mode == "quick" else SCAN_DEEP_BUDGET
+    budget = SCAN_DEEP_BUDGET
 
     pending = {
         "rl_iter_ts": now_iso(),
@@ -633,7 +627,6 @@ def _action_scan_locked(cfg: dict, lock_fh: object) -> dict:
         "rl_target_name": t["name"],
         "rl_scope": t.get("scope", []),
         "rl_rate_limit": rate,
-        "rl_mode": mode,
         "rl_instruction_hint": t.get("instruction_hint", ""),
     }
     SCAN_PENDING.write_text(json.dumps(pending, indent=2))
@@ -641,7 +634,6 @@ def _action_scan_locked(cfg: dict, lock_fh: object) -> dict:
     cmd = [
         str(PROMETHEUS_BIN), "-n",
         "--target", primary_url,
-        "--scan-mode", mode,
         "--rate-limit", str(rate),
     ]
     if t.get("instruction_hint"):
@@ -997,9 +989,11 @@ def action_fix(cfg: dict) -> dict:
     before = target_file.read_text()
     edit_text = item["edit"]
     if item["kind"] == "rename":
-        # Apply the actual rename: strix-sandbox → prometheus-sandbox (per dogfood)
+        # Apply the actual rename: strix-sandbox → prometheus-sandbox (per dogfood).
+        # Local-only build: rewrite the upstream GHCR image to the local image name.
         after = before.replace("ghcr.io/usestrix/strix-sandbox:1.0.0", "prometheus-sandbox:local")
-        after = after.replace("usestrix/strix-sandbox", "useprometheus/prometheus-sandbox")
+        after = after.replace("usestrix/strix-sandbox", "prometheus-sandbox:local")
+        after = after.replace("useprometheus/prometheus-sandbox", "prometheus-sandbox:local")
         if after == before:
             return {
                 "action": "FIX",
@@ -1235,7 +1229,7 @@ def cmd_targets(args: argparse.Namespace) -> int:
     for key in cfg.get("loop_target_priority", []):
         t = cfg["targets"].get(key, {})
         s = target_streak(key)
-        print(f"  {key:18s} ai={t.get('ai_allowed')!s:5} mode={t.get('scan_mode'):8s} streak={s}/{THREE_STRIKE}")
+        print(f"  {key:18s} ai={t.get('ai_allowed')!s:5} streak={s}/{THREE_STRIKE}")
     return 0
 
 

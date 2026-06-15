@@ -146,7 +146,6 @@ class KnowledgeStore:
                     started_at      TEXT    NOT NULL,
                     ended_at        TEXT,
                     status          TEXT    NOT NULL DEFAULT 'running',
-                    scan_mode       TEXT,
                     finding_count   INTEGER NOT NULL DEFAULT 0,
                     critical_count  INTEGER NOT NULL DEFAULT 0,
                     high_count      INTEGER NOT NULL DEFAULT 0,
@@ -425,7 +424,6 @@ class KnowledgeStore:
         self,
         domain: str,
         scan_id: str,
-        scan_mode: str = "deep",
         instruction: str = "",
         custom_headers: list[str] | None = None,
     ) -> dict[str, Any]:
@@ -454,11 +452,11 @@ class KnowledgeStore:
             self._conn.execute(
                 """
                 INSERT OR IGNORE INTO scan_history
-                    (domain, scan_id, started_at, status, scan_mode,
+                    (domain, scan_id, started_at, status,
                      instruction, custom_headers)
-                VALUES (?, ?, ?, 'running', ?, ?, ?)
+                VALUES (?, ?, ?, 'running', ?, ?)
                 """,
-                (domain, scan_id, now, scan_mode, instruction, headers_json),
+                (domain, scan_id, now, instruction, headers_json),
             )
             self._conn.commit()
         return {"success": True, "domain": domain, "scan_id": scan_id}
@@ -558,7 +556,7 @@ class KnowledgeStore:
             # Scan history
             scans = self._conn.execute(
                 """
-                SELECT scan_id, started_at, ended_at, status, scan_mode,
+                SELECT scan_id, started_at, ended_at, status,
                        finding_count, critical_count, high_count, medium_count,
                        low_count, info_count, llm_requests, total_tokens,
                        instruction

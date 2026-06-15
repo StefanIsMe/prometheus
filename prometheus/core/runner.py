@@ -255,9 +255,9 @@ async def run_prometheus_scan(
     )
 
     settings = load_settings()
-    # Use the scan's configured mode for model tier selection
-    _scan_mode = str(scan_config.get("scan_mode") or "deep")
-    resolution = configure_sdk_model_defaults(settings, scan_mode=_scan_mode)
+    # Prometheus is single-mode: every scan is deep. Use the HARD model
+    # tier for the root agent and SIMPLE for children.
+    resolution = configure_sdk_model_defaults(settings)
     resolved_model = normalize_model_name(model or settings.llm.model or "")
     if not resolved_model:
         raise RuntimeError(
@@ -316,13 +316,11 @@ async def run_prometheus_scan(
                     prior_knowledge_summary.append(f"  ... and {len(entries) - 20} more entries")
 
             # Record scan start in target profile
-            scan_mode_val = str(scan_config.get("scan_mode") or "deep")
             instruction_val = str(scan_config.get("user_instructions") or "")
             custom_headers_val = scan_config.get("custom_headers") or []
             ks.record_scan_start(
                 domain=domain,
                 scan_id=scan_id,
-                scan_mode=scan_mode_val,
                 instruction=instruction_val,
                 custom_headers=custom_headers_val,
             )
@@ -548,7 +546,6 @@ async def run_prometheus_scan(
 
     try:
         targets = scan_config.get("targets") or []
-        scan_mode = str(scan_config.get("scan_mode") or "deep")
         is_whitebox = any(t.get("type") == "local_code" for t in targets)
         skills = list(scan_config.get("skills") or [])
         # Determine if this is a rescan (prior knowledge exists for all targets)
@@ -597,7 +594,6 @@ async def run_prometheus_scan(
                         block_lines.append(
                             f"  {s['scan_id']} | {s['status']} | "
                             f"{s['finding_count']} findings | "
-                            f"{s.get('scan_mode', '?')} mode | "
                             f"{s.get('started_at', '?')[:10]}"
                         )
 
@@ -773,7 +769,6 @@ RESCAN MODE — EFFICIENCY DIRECTIVES:
             name=agent_name,
             skills=skills,
             is_root=True,
-            scan_mode=scan_mode,
             is_whitebox=is_whitebox,
             interactive=interactive,
             chat_completions_tools=chat_completions_tools,
@@ -793,7 +788,6 @@ RESCAN MODE — EFFICIENCY DIRECTIVES:
             )
 
         child_agent_builder = make_child_factory(
-            scan_mode=scan_mode,
             is_whitebox=is_whitebox,
             interactive=interactive,
             chat_completions_tools=chat_completions_tools,

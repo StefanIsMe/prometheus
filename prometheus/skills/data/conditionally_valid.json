@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "description": "Findings that are valid ONLY when the right chain conditions hold. Each chain has a pattern + required-link conditions. If a finding matches the primary vuln type but no link is present, the report is blocked with CHAIN_REQUIRED.",
+  "chains": [
+    {
+      "id": "open_redirect_oauth_ato",
+      "title": "Open redirect + OAuth redirect_uri",
+      "primary": "open_redirect",
+      "links_required": ["oauth_redirect_uri", "open_redirect"],
+      "severity_when_chained": "P1",
+      "description": "Open redirect on /oauth/redirect or similar allows stealing OAuth authorization codes. Escalates to full account takeover."
+    },
+    {
+      "id": "ssrf_imds_creds",
+      "title": "SSRF + cloud metadata service",
+      "primary": "ssrf",
+      "links_required": ["ssrf", "imds_reachable"],
+      "severity_when_chained": "P1",
+      "description": "SSRF reaching 169.254.169.254 or equivalent cloud metadata endpoint can exfiltrate IAM credentials."
+    },
+    {
+      "id": "ssrf_internal_admin",
+      "title": "SSRF + internal admin panel",
+      "primary": "ssrf",
+      "links_required": ["ssrf", "internal_admin_reachable"],
+      "severity_when_chained": "P1",
+      "description": "SSRF reaching an internal admin panel (e.g., unauthenticated Grafana) escalates from informational to RCE/data-exfil."
+    },
+    {
+      "id": "cors_origin_reflect",
+      "title": "CORS reflection of attacker origin + state-changing endpoint",
+      "primary": "cors",
+      "links_required": ["cors_origin_reflect", "state_changing_endpoint"],
+      "severity_when_chained": "P1",
+      "description": "CORS that reflects any origin AND has Access-Control-Allow-Credentials + a state-changing endpoint = cross-origin account takeover."
+    },
+    {
+      "id": "idor_sensitive_data",
+      "title": "IDOR + sensitive data exposure",
+      "primary": "idor",
+      "links_required": ["idor", "sensitive_data_in_response"],
+      "severity_when_chained": "P1",
+      "description": "IDOR on /users/<id> etc. that returns PII, payment data, or tokens escalates from low to critical."
+    },
+    {
+      "id": "stored_xss_admin",
+      "title": "Stored XSS + admin viewer",
+      "primary": "xss",
+      "links_required": ["stored_xss", "admin_viewer"],
+      "severity_when_chained": "P1",
+      "description": "Stored XSS on a tenant-visible field that an admin will view = admin account takeover via cookie theft."
+    },
+    {
+      "id": "xss_csrf_chain",
+      "title": "XSS + CSRF",
+      "primary": "xss",
+      "links_required": ["xss", "csrf_protection_missing"],
+      "severity_when_chained": "P1",
+      "description": "XSS on a logged-in user's context with no CSRF token on a state-changing endpoint = chained CSRF+XSS account takeover."
+    },
+    {
+      "id": "auth_bypass_admin",
+      "title": "Auth bypass + admin endpoint",
+      "primary": "auth_bypass",
+      "links_required": ["auth_bypass", "admin_endpoint"],
+      "severity_when_chained": "P1",
+      "description": "Auth bypass that reaches an admin endpoint escalates from medium to critical."
+    },
+    {
+      "id": "race_condition_balance",
+      "title": "Race condition + financial endpoint",
+      "primary": "race_condition",
+      "links_required": ["race_condition", "balance_or_voucher_endpoint"],
+      "severity_when_chained": "P1",
+      "description": "Race condition on /withdraw, /redeem, /transfer, /voucher = direct financial loss."
+    },
+    {
+      "id": "account_enum_password_reset",
+      "title": "Account enumeration + password reset poisoning",
+      "primary": "account_enumeration",
+      "links_required": ["account_enumeration", "password_reset_flow"],
+      "severity_when_chained": "P2",
+      "description": "Account enumeration on /forgot-password that also returns a reset token timing channel escalates from informational to ATO chain."
+    },
+    {
+      "id": "info_disclosure_internal_fields",
+      "title": "Info disclosure of internal field names + downstream vuln",
+      "primary": "info_disclosure",
+      "links_required": ["info_disclosure", "downstream_vuln_or_chain"],
+      "severity_when_chained": "P3",
+      "description": "Internal field names alone are info, but chained with an SQLi, IDOR, or path traversal they materially aid exploitation."
+    },
+    {
+      "id": "rate_limit_credential_stuffing",
+      "title": "Missing rate limit + credential stuffing feasibility",
+      "primary": "missing_rate_limit",
+      "links_required": ["missing_rate_limit", "no_captcha_or_lockout"],
+      "severity_when_chained": "P2",
+      "description": "Missing rate limit + no lockout / no captcha on /login = credential stuffing feasible at scale."
+    }
+  ]
+}

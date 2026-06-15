@@ -1,0 +1,52 @@
+# Prometheus per-role model routing
+#
+# Maps each pipeline stage to a model tier. The Hermes bridge resolves
+# the actual provider/model from the active profile; this file decides
+# WHICH profile / tier to ask for. See
+# ``prometheus/config/role_routing.py`` for the runtime resolver.
+#
+# The schema is intentionally simple so the runner can override it via
+# the ``PROMETHEUS_ROLE_ROUTING`` env var (path to an alternate YAML).
+#
+# Tier vocabulary (mirrors prometheus.config.llm_config.ScanTier):
+#   - cheap       : fast, low-cost model for recon / scoping.
+#   - standard    : balanced model for deep-dive.
+#   - strong      : top-quality model for adversarial verification.
+#   - opus        : alias for ``strong`` (legacy name).
+#   - sonnet      : alias for ``standard`` (legacy name).
+#   - haiku       : alias for ``cheap`` (legacy name).
+#
+# Stages (Change 2.x):
+#   s1_scope        : scope guardrail. Cheap — straight regex / Scope class.
+#   s2_threatmodel  : STRIDE / OWASP categorization. Cheap (Haiku).
+#   s3_recon        : SPA-aware recon. Deterministic, no LLM.
+#   s4_deepdive     : main hunt loop. Standard (Sonnet).
+#   s5_prefilter    : N-run voting + dedup. Deterministic, no LLM.
+#   s6_verify       : adversarial verification. Strong (Opus).
+#   s7_dedup        : semantic dedup. Deterministic, no LLM.
+#   s8_report       : report writer. Standard (Sonnet).
+#   s9_sarif        : SARIF emitter. Deterministic, no LLM.
+#
+# Override example (env var):
+#   PROMETHEUS_ROLE_ROUTING=~/.prometheus/role_routing.local.yaml
+#
+# Cost-optimized profile (saves tokens on long runs):
+#   s2_threatmodel: cheap
+#   s4_deepdive:    standard
+#   s6_verify:      strong
+#
+# Max-quality profile (spend more, get fewer false positives):
+#   s2_threatmodel: standard
+#   s4_deepdive:    strong
+#   s6_verify:      strong
+
+defaults:
+  s1_scope: cheap
+  s2_threatmodel: cheap
+  s3_recon: cheap
+  s4_deepdive: standard
+  s5_prefilter: cheap
+  s6_verify: strong
+  s7_dedup: cheap
+  s8_report: standard
+  s9_sarif: cheap

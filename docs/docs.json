@@ -24,7 +24,6 @@
             "group": "Usage",
             "pages": [
               "usage/cli",
-              "usage/scan-modes",
               "usage/instructions"
             ]
           },
@@ -85,13 +84,8 @@
       "anchors": [
         {
           "anchor": "GitHub",
-          "href": "https://github.com/useprometheus/prometheus",
+          "href": "https://github.com/StefanIsMe/prometheus",
           "icon": "github"
-        },
-        {
-          "anchor": "Discord",
-          "href": "https://discord.gg/prometheus-ai",
-          "icon": "discord"
         }
       ]
     }
@@ -100,15 +94,13 @@
     "links": [],
     "primary": {
       "type": "button",
-      "label": "Try prometheus Cloud",
-      "href": "https://app.prometheus.ai"
+      "label": "",
+      "href": ""
     }
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/prometheus_ai",
-      "github": "https://github.com/useprometheus",
-      "discord": "https://discord.gg/prometheus-ai"
+      "github": "https://github.com/StefanIsMe"
     }
   },
   "fonts": {

@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "description": "Findings that are ALWAYS rejected as standalone vulnerabilities. Each rule is matched against a finding's title, evidence, and (optionally) request/response snippets. If a rule matches, the candidate is killed with the rule's rejection_reason.",
+  "rules": [
+    {
+      "id": "missing_csp_alone",
+      "title_match": ["content-security-policy", "missing csp", "no csp", "csp header"],
+      "description": "Missing CSP header alone is informational, not a vulnerability.",
+      "rejection_reason": "missing_csp_alone",
+      "severity": "info"
+    },
+    {
+      "id": "missing_hsts_alone",
+      "title_match": ["strict-transport-security", "missing hsts", "no hsts", "hsts header"],
+      "description": "Missing HSTS alone is informational.",
+      "rejection_reason": "missing_hsts_alone",
+      "severity": "info"
+    },
+    {
+      "id": "missing_xframe_alone",
+      "title_match": ["x-frame-options", "missing x-frame", "clickjacking header"],
+      "description": "Missing X-Frame-Options is informational; only matters if there is an active clickjacking PoC on a sensitive action.",
+      "rejection_reason": "missing_xframe_alone",
+      "severity": "info"
+    },
+    {
+      "id": "server_version_disclosure",
+      "title_match": ["server header", "x-powered-by", "version disclosure", "banner"],
+      "description": "Server version disclosure is informational unless chained to a known CVE.",
+      "rejection_reason": "version_disclosure_alone",
+      "severity": "info"
+    },
+    {
+      "id": "directory_listing_passive",
+      "title_match": ["directory listing", "index of /"],
+      "description": "Directory listing on a non-sensitive path is informational.",
+      "rejection_reason": "directory_listing_passive",
+      "severity": "info"
+    },
+    {
+      "id": "open_port_alone",
+      "title_match": ["open port", "exposed port"],
+      "description": "An open port is not a vulnerability. The vulnerability is whatever runs on the port.",
+      "rejection_reason": "open_port_alone",
+      "severity": "info"
+    },
+    {
+      "id": "self_xss",
+      "title_match": ["self-xss", "self xss", "stored xss on profile"],
+      "description": "Self-XSS where only the attacker can trigger the payload against their own account is not exploitable.",
+      "rejection_reason": "self_xss",
+      "severity": "low"
+    },
+    {
+      "id": "reflected_xss_on_logged_out",
+      "title_match": ["reflected xss"],
+      "description": "Reflected XSS on a logged-out page with no sensitive action to chain is rarely exploitable.",
+      "rejection_reason": "reflected_xss_logged_out_alone",
+      "severity": "low"
+    },
+    {
+      "id": "open_redirect_alone",
+      "title_match": ["open redirect"],
+      "description": "An open redirect is not exploitable on its own. It only matters when chained to OAuth, account takeover, or sensitive phishing flows.",
+      "rejection_reason": "open_redirect_alone",
+      "severity": "low",
+      "requires_chain": true,
+      "chain_hint": "open_redirect_oauth_ato"
+    },
+    {
+      "id": "ssrf_internal_only",
+      "title_match": ["ssrf"],
+      "description": "SSRF that only reaches the agent's own infrastructure is internal-only and not a vulnerability.",
+      "rejection_reason": "ssrf_internal_only",
+      "severity": "info"
+    },
+    {
+      "id": "rate_limit_missing_alone",
+      "title_match": ["missing rate limit", "no rate limit"],
+      "description": "Missing rate limit is not a vulnerability by itself. It must be chained to credential stuffing, account enumeration, or a high-value action.",
+      "rejection_reason": "missing_rate_limit_alone",
+      "severity": "info"
+    },
+    {
+      "id": "cors_wildcard_alone",
+      "title_match": ["cors wildcard", "access-control-allow-origin: *"],
+      "description": "CORS wildcard without credentials is not a vulnerability. With credentials, the browser blocks it. Chain to an authenticated sensitive action is required.",
+      "rejection_reason": "cors_wildcard_alone",
+      "severity": "info"
+    },
+    {
+      "id": "mixed_content_passive",
+      "title_match": ["mixed content", "insecure resource"],
+      "description": "Mixed content on a non-sensitive asset is informational.",
+      "rejection_reason": "mixed_content_passive",
+      "severity": "info"
+    },
+    {
+      "id": "cookie_missing_secure_flag_alone",
+      "title_match": ["cookie missing secure", "cookie missing httponly"],
+      "description": "Missing cookie flags on a non-session cookie are informational.",
+      "rejection_reason": "cookie_flags_alone",
+      "severity": "info"
+    },
+    {
+      "id": "source_map_exposed_alone",
+      "title_match": ["source map exposed", "*.map file"],
+      "description": "Source map exposure is informational. It may reveal code paths but does not directly enable exploitation.",
+      "rejection_reason": "source_map_alone",
+      "severity": "info"
+    },
+    {
+      "id": "email_header_disclosure",
+      "title_match": ["email header disclosure", "internal email"],
+      "description": "Email header disclosure of an internal field name is informational; chain to actual data exfiltration to escalate.",
+      "rejection_reason": "email_header_alone",
+      "severity": "info"
+    },
+    {
+      "id": "stack_trace_disclosure",
+      "title_match": ["stack trace disclosure", "stacktrace disclosure"],
+      "description": "Stack trace disclosure is informational unless it contains a secret, internal hostname, or schema.",
+      "rejection_reason": "stack_trace_alone",
+      "severity": "info"
+    },
+    {
+      "id": "swagger_ui_exposed",
+      "title_match": ["swagger ui", "openapi ui", "api docs exposed"],
+      "description": "Swagger UI exposure is informational unless it reveals sensitive ops or secrets.",
+      "rejection_reason": "swagger_ui_alone",
+      "severity": "info"
+    },
+    {
+      "id": "default_credentials_on_public_demo",
+      "title_match": ["default credentials", "default password"],
+      "description": "Default credentials on a public demo or sandbox endpoint are not vulnerabilities.",
+      "rejection_reason": "default_creds_demo",
+      "severity": "info"
+    },
+    {
+      "id": "trace_method_allowed",
+      "title_match": ["trace method", "options method", "http trace"],
+      "description": "HTTP TRACE / wide OPTIONS alone is not exploitable without an XST chain.",
+      "rejection_reason": "trace_method_alone",
+      "severity": "info"
+    }
+  ]
+}

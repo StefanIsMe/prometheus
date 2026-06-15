@@ -44,7 +44,7 @@ class RuntimeSettings(BaseSettings):
     model_config = _BASE_CONFIG
 
     image: str = Field(
-        default="ghcr.io/useprometheus/prometheus-sandbox:1.0.0",
+        default="prometheus-sandbox:local",
         alias="prometheus_IMAGE",
     )
     backend: str = Field(default="docker", alias="prometheus_RUNTIME_BACKEND")
@@ -52,16 +52,9 @@ class RuntimeSettings(BaseSettings):
     runs_dir: str | None = Field(default=None, alias="prometheus_RUNS_DIR")
 
 
-class TelemetrySettings(BaseSettings):
-    model_config = _BASE_CONFIG
-
-    enabled: bool = Field(default=True, alias="prometheus_TELEMETRY")
-
-
 class Settings(BaseSettings):
     model_config = _BASE_CONFIG
 
     llm: LlmSettings = Field(default_factory=LlmSettings)
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
-    telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
 

@@ -62,7 +62,7 @@ Skills focus on deep, specialized knowledge to significantly enhance agent capab
 
 ## 🤝 Contributing
 
-Community contributions are more than welcome — contribute new skills via [pull requests](https://github.com/useprometheus/prometheus/pulls) or [GitHub issues](https://github.com/useprometheus/prometheus/issues) to help expand the collection and improve extensibility for prometheus agents.
+Community contributions are more than welcome — contribute new skills via [pull requests](https://github.com/StefanIsMe/prometheus/pulls) or [GitHub issues](https://github.com/StefanIsMe/prometheus/issues) to help expand the collection and improve extensibility for prometheus agents.
 
 ---
 

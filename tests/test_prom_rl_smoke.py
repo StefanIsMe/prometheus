@@ -103,7 +103,7 @@ def test_targets_json_has_at_least_one_ai_allowed():
     assert "targets" in cfg
     allowed = [
         k for k, v in cfg["targets"].items()
-        if v.get("ai_allowed") and v.get("scan_mode") and v.get("scan_mode") != "off"
+        if v.get("ai_allowed")
     ]
     assert allowed, "no ai_allowed target found; the loop would have nothing to scan"
 
@@ -166,8 +166,8 @@ def test_self_review_prompt_gated():
     that the self-review checklist only appears when the flag is on."""
     sys.path.insert(0, str(REPO_ROOT))
     from prometheus.agents.prompt import render_system_prompt  # type: ignore[import-not-found]
-    default = render_system_prompt(scan_mode="deep", is_root=True, system_prompt_context={})
-    on = render_system_prompt(scan_mode="deep", is_root=True, system_prompt_context={"rl_self_review": True})
+    default = render_system_prompt(is_root=True, system_prompt_context={})
+    on = render_system_prompt(is_root=True, system_prompt_context={"rl_self_review": True})
     assert "self_review_checklist" not in default
     assert "self_review_checklist" in on
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import os
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -349,6 +350,75 @@ def _check_tor_proxy_required(cmd: str) -> str | None:
     return None
 
 
+# --- Scope guardrail (engagement-folder) ---
+# When an active engagement has been declared, every command containing
+# an ``http://`` or ``https://`` URL must reference a host that the
+# engagement's scope allows. Refusing a command happens *before* Tor
+# enforcement so the agent gets one clear error per command.
+from prometheus.engagement.scope import Scope as _EngagementScope  # noqa: E402
+
+_active_engagement_scope: _EngagementScope | None = None
+_scope_gate_enabled: bool = False
+
+
+def set_engagement_scope(scope: _EngagementScope | None) -> None:
+    """Install / clear the active engagement scope.
+
+    When set, ``_check_scope_guardrail`` will refuse any command whose
+    embedded URL host is not in scope.
+    """
+    global _active_engagement_scope, _scope_gate_enabled
+    _active_engagement_scope = scope
+    _scope_gate_enabled = scope is not None
+
+
+def get_engagement_scope() -> _EngagementScope | None:
+    return _active_engagement_scope
+
+
+_URL_RE = re.compile(r"https?://[^\s'\"<>]+", re.IGNORECASE)
+
+
+def _extract_url_hosts(cmd: str) -> list[str]:
+    hosts: list[str] = []
+    for match in _URL_RE.finditer(cmd):
+        url = match.group(0).rstrip(".,;:)]}>'\"")
+        try:
+            from urllib.parse import urlparse
+            host = urlparse(url).hostname or ""
+        except ValueError:
+            host = ""
+        if host:
+            hosts.append(host.lower())
+    return hosts
+
+
+def _check_scope_guardrail(cmd: str) -> str | None:
+    """Refuse commands that target a host outside the engagement scope."""
+    if not _scope_gate_enabled or _active_engagement_scope is None:
+        return None
+    # Honor the same bypass marker as Tor: the agent must justify going
+    # out of scope explicitly. Operators can also disable the gate
+    # globally via PROMETHEUS_SCOPE_GATE=0.
+    if os.environ.get("PROMETHEUS_SCOPE_GATE", "1") == "0":
+        return None
+    if "#scope-bypass#" in cmd:
+        return None
+    hosts = _extract_url_hosts(cmd)
+    if not hosts:
+        return None
+    bad = [h for h in hosts if not _active_engagement_scope.in_scope_host(h)]
+    if not bad:
+        return None
+    return (
+        "SCOPE GUARDRAIL: command targets out-of-scope host(s) "
+        f"{sorted(set(bad))}. Engagement scope only allows "
+        f"{_active_engagement_scope.in_scope}. "
+        "If this is intentional (e.g., a redirect during PoC validation), "
+        "prepend #scope-bypass# to your command and document why in evidence."
+    )
+
+
 # --- Fingerprinting gate ---
 _fingerprint_gate_enabled = False
 _fingerprint_done = False
@@ -612,6 +682,15 @@ def _wrap_exec_command(tool: FunctionTool) -> FunctionTool:
             if tor_block:
                 logger.warning("Tor proxy enforcement blocked command: %s", cmd[:200])
                 return tor_block
+
+            # --- Scope guardrail (engagement-folder) ---
+            # Refuse any command whose URL host is outside the active
+            # engagement's scope. Runs AFTER Tor enforcement so the
+            # agent still gets a clear single error per command.
+            scope_block = _check_scope_guardrail(cmd)
+            if scope_block:
+                logger.warning("Scope guardrail blocked command: %s", cmd[:200])
+                return scope_block
             # Track that Tor was used (any tool with proxy flag)
             if _tor_gate_enabled and not _tor_ever_used:
                 _maybe_mark_tor_used(cmd)
@@ -1094,7 +1173,6 @@ def build_prometheus_agent(
     name: str = "prometheus",
     skills: list[str] | None = None,
     is_root: bool,
-    scan_mode: str = "deep",
     is_whitebox: bool = False,
     interactive: bool = False,
     chat_completions_tools: bool = False,
@@ -1113,7 +1191,6 @@ def build_prometheus_agent(
     """
     instructions = render_system_prompt(
         skills=skills,
-        scan_mode=scan_mode,
         is_whitebox=is_whitebox,
         is_root=is_root,
         interactive=interactive,
@@ -1167,12 +1244,11 @@ def build_prometheus_agent(
     tools = wrapped_tools
 
     logger.info(
-        "Built %s agent '%s' (skills=%d, tools=%d, scan_mode=%s, whitebox=%s)",
+        "Built %s agent '%s' (skills=%d, tools=%d, whitebox=%s)",
         "root" if is_root else "child",
         name,
         len(skills or []),
         len(tools),
-        scan_mode,
         is_whitebox,
     )
 
@@ -1200,7 +1276,6 @@ def build_prometheus_agent(
 
 def make_child_factory(
     *,
-    scan_mode: str = "deep",
     is_whitebox: bool = False,
     interactive: bool = False,
     chat_completions_tools: bool = False,
@@ -1208,9 +1283,9 @@ def make_child_factory(
 ) -> Any:
     """Return the runner-owned builder used by ``spawn_child_agent``.
 
-    Run-level arguments (``scan_mode``, ``is_whitebox``, etc.) are
-    captured in a closure so each child inherits scan-level configuration
-    without the graph tool knowing about runner internals.
+    Run-level arguments (``is_whitebox``, etc.) are captured in a
+    closure so each child inherits scan-level configuration without the
+    graph tool knowing about runner internals.
     """
 
     def _factory(*, name: str, skills: list[str]) -> SandboxAgent[Any]:
@@ -1218,7 +1293,6 @@ def make_child_factory(
             name=name,
             skills=skills,
             is_root=False,
-            scan_mode=scan_mode,
             is_whitebox=is_whitebox,
             interactive=interactive,
             chat_completions_tools=chat_completions_tools,

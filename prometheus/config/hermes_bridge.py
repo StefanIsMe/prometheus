@@ -138,6 +138,229 @@ def _patch_openai_codex_responses_replay() -> None:
     setattr(OpenAIResponsesModel, "_prometheus_codex_replay_patch", True)
 
 
+def _patch_chat_completions_invalid_function_arguments() -> None:
+    """Sanitize invalid function-call argument JSON before it leaves for the
+    provider.
+
+    The OpenAI Agents SDK passes the model's tool-call ``arguments`` string
+    verbatim to the provider. Strict gateways (TokenRouter, certain vLLM
+    deployments, OpenAI-compatible proxies) reject the request with HTTP
+    400 ``invalid function arguments json string`` (code 2013) when the
+    arguments are not parseable JSON — typically because the model was
+    cut off mid-stream and produced a truncated string, emitted an
+    unterminated literal, or included stray control characters.
+
+    Without this patch the whole scan aborts: the SDK raises
+    ``openai.BadRequestError`` out of the streaming handler and the agent
+    never gets a turn to recover. We don't try to *recover* the truncated
+    JSON (that's lossy and dangerous), we just:
+
+    1. Replace the offending tool call's ``arguments`` with ``"{}"`` so the
+       request reaches the provider. The provider's tool-execution layer
+       will then dispatch the call to the SDK with no arguments, which the
+       tool wrapper reports as a clear "missing required arguments" error
+       and returns to the model on the *next* turn.
+    2. Inject a synthetic ``function_call_output`` item right after the bad
+       tool call, with ``call_id`` matching the original tool call and an
+       ``output`` explaining the JSON was invalid. The model sees what
+       happened and can correct course in the same turn.
+
+    The patch is idempotent: it only fires when the patch flag is not yet
+    set, and it preserves the original ``Converter.items_to_messages`` so
+    SDK upgrades don't silently break us.
+    """
+    try:
+        from agents.models.chatcmpl_converter import Converter
+    except Exception:
+        logger.debug(
+            "Could not import agents.models.chatcmpl_converter for invalid-args patch",
+            exc_info=True,
+        )
+        return
+
+    if getattr(Converter, "_prometheus_invalid_args_patch", False):
+        return
+
+    original_items_to_messages = Converter.items_to_messages
+    original_message_to_output_items = getattr(
+        Converter, "message_to_output_items", None
+    )
+
+    import json as _json
+    from typing import Iterable as _Iterable, cast as _cast
+
+    def _is_valid_arguments_json(value: Any) -> bool:
+        """Return True when ``value`` is a JSON string that parses to an object/dict.
+
+        Tool arguments must be a JSON object per OpenAI's contract, but a
+        surprising number of model mistakes produce strings, lists, or
+        numbers in this field. We treat anything non-object as invalid so
+        the provider doesn't 400.
+        """
+        if not isinstance(value, str):
+            return False
+        stripped = value.strip()
+        if not stripped:
+            return True  # empty string is treated as {} upstream already
+        try:
+            parsed = _json.loads(stripped)
+        except (ValueError, TypeError):
+            return False
+        return isinstance(parsed, dict)
+
+    def _extract_arguments(item: Any) -> tuple[str, str | None, str | None, str | None]:
+        """Pull ``(arguments, call_id, name, type)`` from a function_call item.
+
+        Returns ``(arguments, call_id, name, type)`` or ``("", None, None, None)``
+        if the item is not a function call.
+        """
+        if isinstance(item, dict):
+            if item.get("type") == "function_call":
+                return (
+                    str(item.get("arguments") or ""),
+                    item.get("call_id"),
+                    item.get("name"),
+                    "function_call",
+                )
+            return ("", None, None, None)
+        # Pydantic model
+        if getattr(item, "type", None) == "function_call":
+            return (
+                str(getattr(item, "arguments", "") or ""),
+                getattr(item, "call_id", None),
+                getattr(item, "name", None),
+                "function_call",
+            )
+        return ("", None, None, None)
+
+    def _maybe_synthesize_output(
+        call_id: str | None,
+        name: str | None,
+        original_args: str,
+        exc: Exception,
+    ) -> dict[str, Any] | None:
+        if not call_id:
+            return None
+        snippet = (original_args or "").strip()
+        if len(snippet) > 240:
+            snippet = snippet[:240] + "…"
+        message = (
+            f"INVALID_ARGUMENTS_JSON: tool '{name or '<unknown>'}' (call_id={call_id}) "
+            f"was produced with arguments that are not a valid JSON object. "
+            f"Original arguments were replaced with {{}} to keep the request valid. "
+            f"Parser error: {exc}. Original (truncated): {snippet!r}. "
+            f"Please retry the call with a complete, well-formed JSON object."
+        )
+        return {
+            "type": "function_call_output",
+            "call_id": call_id,
+            "output": message,
+        }
+
+    def patched_items_to_messages(
+        cls,
+        items: Any,
+        model: str | None = None,
+        preserve_thinking_blocks: bool = False,
+        preserve_tool_output_all_content: bool = False,
+        base_url: str | None = None,
+        should_replay_reasoning_content: Any = None,
+    ) -> list[Any]:
+        # Sanitize the input list in place: when a function_call item has
+        # arguments that aren't a valid JSON object, we (a) replace its
+        # arguments with "{}", and (b) inject a synthetic function_call_output
+        # right after it so the model sees a clear error. The original SDK
+        # path runs unchanged on the cleaned list.
+        try:
+            cleaned: list[Any] = []
+            if isinstance(items, str):
+                cleaned = [items]
+            else:
+                for item in items:
+                    cleaned.append(item)
+                    arguments, call_id, name, kind = _extract_arguments(item)
+                    if kind != "function_call":
+                        continue
+                    if _is_valid_arguments_json(arguments):
+                        continue
+                    # Capture the parse error in a name that lives at the
+                    # function scope, NOT the except block, so the second
+                    # invalid item in the same batch doesn't trip an
+                    # UnboundLocalError when we re-enter this branch.
+                    parse_exc: Exception = _json.JSONDecodeError(
+                        "arguments is not a JSON object", arguments or "", 0
+                    )
+                    logger.warning(
+                        "Sanitizing invalid tool-call arguments for call_id=%s "
+                        "tool=%s: %s",
+                        call_id, name, parse_exc,
+                    )
+                    # Mutate the item in place so the original SDK path sees
+                    # valid JSON when it walks the assistant message.
+                    if isinstance(item, dict):
+                        item["arguments"] = "{}"
+                    else:
+                        # Pydantic model — try attribute assignment first,
+                        # fall back to reconstructing the item.
+                        try:
+                            setattr(item, "arguments", "{}")
+                        except Exception:
+                            cleaned[-1] = {
+                                **{
+                                    k: getattr(item, k)
+                                    for k in (
+                                        "id",
+                                        "call_id",
+                                        "name",
+                                        "type",
+                                        "provider_data",
+                                        "namespace",
+                                        "status",
+                                    )
+                                    if hasattr(item, k) and k != "arguments"
+                                },
+                                "type": "function_call",
+                                "call_id": call_id,
+                                "name": name,
+                                "arguments": "{}",
+                            }
+                    synthesized = _maybe_synthesize_output(
+                        call_id, name, arguments, parse_exc
+                    )
+                    if synthesized is not None:
+                        cleaned.append(synthesized)
+            return original_items_to_messages.__func__(
+                cls,
+                cleaned,
+                model=model,
+                preserve_thinking_blocks=preserve_thinking_blocks,
+                preserve_tool_output_all_content=preserve_tool_output_all_content,
+                base_url=base_url,
+                should_replay_reasoning_content=should_replay_reasoning_content,
+            )
+        except Exception:
+            # Never let the patch itself crash a scan. Fall back to the
+            # unmodified SDK behavior.
+            logger.debug(
+                "Invalid-args sanitizer fell back to unmodified Converter.items_to_messages",
+                exc_info=True,
+            )
+            return original_items_to_messages.__func__(
+                cls,
+                items,
+                model=model,
+                preserve_thinking_blocks=preserve_thinking_blocks,
+                preserve_tool_output_all_content=preserve_tool_output_all_content,
+                base_url=base_url,
+                should_replay_reasoning_content=should_replay_reasoning_content,
+            )
+
+    # Bind as a classmethod.
+    Converter.items_to_messages = classmethod(patched_items_to_messages)  # type: ignore[assignment]
+    setattr(Converter, "_prometheus_invalid_args_patch", True)
+    setattr(Converter, "_prometheus_invalid_args_original", original_items_to_messages)
+
+
 @dataclass(frozen=True)
 class HermesModelResolution:
     provider: str
@@ -539,6 +762,12 @@ def apply_hermes_model_defaults(settings: Any | None = None) -> HermesModelResol
     sdk_api = "responses" if resolution.provider == "openai-codex" else "chat_completions"
     if resolution.provider == "openai-codex":
         _patch_openai_codex_responses_replay()
+    if sdk_api == "chat_completions":
+        # Sanitize invalid function-call JSON for any Chat-Completions
+        # provider (TokenRouter in particular returns 400 code 2013 on
+        # unparseable arguments; see the patch docstring for the full
+        # recovery model).
+        _patch_chat_completions_invalid_function_arguments()
     # Prometheus uses Hermes OAuth/runtime credentials for model routing. The
     # OpenAI Agents SDK tracing exporter requires a platform secret key and will
     # repeatedly POST /v1/traces/ingest with the OAuth token if tracing remains

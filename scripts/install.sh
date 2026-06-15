@@ -3,8 +3,8 @@
 set -euo pipefail
 
 APP=prometheus
-REPO="useprometheus/prometheus"
-prometheus_IMAGE="ghcr.io/useprometheus/prometheus-sandbox:1.0.0"
+REPO="StefanIsMe/prometheus"
+prometheus_IMAGE="prometheus-sandbox:local"
 
 MUTED='\033[0;2m'
 RED='\033[0;31m'
@@ -342,9 +342,6 @@ echo ""
 echo -e "  ${CYAN}2.${NC} Run a penetration test:"
 echo -e "     ${MUTED}prometheus --target https://example.com${NC}"
 echo ""
-echo -e "${MUTED}For more information visit ${NC}https://prometheus.ai"
-echo -e "${MUTED}Supported models ${NC}https://docs.prometheus.ai/llm-providers/overview"
-echo -e "${MUTED}Join our community ${NC}https://discord.gg/prometheus-ai"
 echo ""
 
 echo -e "${YELLOW}→${NC} Run ${MUTED}source ~/.$(basename $SHELL)rc${NC} or open a new terminal"

@@ -34,7 +34,6 @@ async def add_target(
     target_id: str,
     target_type: str,
     target_config_json: str = "{}",
-    scan_mode: str = "deep",
     instructions: str = "",
     custom_headers: str = "",
     interval_hours: int = 24,
@@ -46,7 +45,6 @@ async def add_target(
         target_type: Type of target (e.g. ``web``, ``api``, ``mobile``).
         target_config_json: JSON string with target-specific config
             (e.g. ``{"scope": ["*.example.com"], "auth": {...}}``).
-        scan_mode: Scan depth — ``quick``, ``deep``, or ``stealth``.
         instructions: Free-form instructions for the scanner agent.
         custom_headers: JSON string of custom HTTP headers to include.
         interval_hours: Hours between scheduled scans (default 24).
@@ -57,7 +55,6 @@ async def add_target(
         return json.dumps({"success": False, "error": f"Invalid target_config_json: {exc}"})
 
     scan_config: dict[str, Any] = {
-        "scan_mode": scan_mode,
         "instructions": instructions,
         "custom_headers": custom_headers,
     }
@@ -129,7 +126,6 @@ async def list_targets(
 async def update_target(
     ctx: RunContextWrapper,
     target_id: str,
-    scan_mode: str | None = None,
     instructions: str | None = None,
     interval_hours: int | None = None,
     status: str | None = None,
@@ -141,7 +137,6 @@ async def update_target(
 
     Args:
         target_id: The target's unique ID.
-        scan_mode: New scan mode (``quick``, ``deep``, ``stealth``).
         instructions: New scanner instructions.
         interval_hours: New scan interval in hours.
         status: New status (``active``, ``paused``, ``archived``).
@@ -150,7 +145,6 @@ async def update_target(
         result = await asyncio.to_thread(
             _registry().update_target,
             target_id=target_id,
-            scan_mode=scan_mode,
             instructions=instructions,
             interval_hours=interval_hours,
             status=status,

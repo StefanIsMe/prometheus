@@ -180,7 +180,6 @@ class TargetRegistry:
         self,
         target_id: str,
         *,
-        scan_mode: str | None = None,
         instructions: str | None = None,
         interval_hours: int | None = None,
         status: str | None = None,
@@ -193,7 +192,7 @@ class TargetRegistry:
         params: list[Any] = [now]
 
         # Merge scan_config changes
-        if scan_mode is not None or instructions is not None or scan_config is not None:
+        if instructions is not None or scan_config is not None:
             with self._lock:
                 row = self._conn.execute(
                     "SELECT scan_config FROM targets WHERE id = ?", (target_id,)
@@ -201,8 +200,6 @@ class TargetRegistry:
                 if row is None:
                     return {"success": False, "error": f"Target '{target_id}' not found"}
                 existing = json.loads(row["scan_config"])
-            if scan_mode is not None:
-                existing["scan_mode"] = scan_mode
             if instructions is not None:
                 existing["instructions"] = instructions
             if scan_config is not None:
