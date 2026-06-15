@@ -43,8 +43,11 @@ _LOG_REPLAY_MARKERS = (
     "log_regression",
     "list_requests_would",
     "test_log_replay",
-    "test_replay_fix",
     "test_log_regression",
+    # ``test_replay_*`` matches every test that starts with ``replay``
+    # in test_replay_fix_log.py. We want a broader net: any test whose
+    # name begins with ``replay_`` is treated as a log-replay test.
+    "replay_",
 )
 
 

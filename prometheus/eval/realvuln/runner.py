@@ -94,7 +94,7 @@ def _run_prometheus(
     Note: there is no ``--run-name`` flag on the prometheus CLI —
     the run name is auto-generated from the target. We pin the
     runs dir via ``PROMETHEUS_RUNS_DIR`` and read the latest
-    subdir back via :func:`run_dir_for_run`.
+    subdir back via :func:`_find_latest_vulnerabilities_json`.
     """
     repo_root = _prometheus_source_root()
     cmd = [
@@ -114,6 +114,10 @@ def _run_prometheus(
     env = os.environ.copy()
     env.setdefault("PYTHONPATH", str(repo_root))
     env["PROMETHEUS_RUNS_DIR"] = str(_REALVULN_RUNS_ROOT)
+    # On this machine, prometheus/scripts/ is missing; the sandbox
+    # requires that path for scan-pipeline.sh. Point it at the
+    # top-level scripts/ dir which exists.
+    env.setdefault("PROMETHEUS_SCRIPTS_DIR", str(_prometheus_source_root() / "scripts"))
     logger.info("Launching: %s (run_name=%s)", " ".join(shlex.quote(c) for c in cmd), run_name)
     return subprocess.run(
         cmd,
