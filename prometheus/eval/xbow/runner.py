@@ -193,7 +193,9 @@ def _prometheus_source_root() -> Path:
     """Return the prometheus source root (where ``pyproject.toml`` lives)."""
     here = Path(__file__).resolve()
     for parent in here.parents:
-        if (parent / "pyproject.toml").is_file() and (parent / "prometheus" / "interface" / "main.py").is_file():
+        if (parent / "pyproject.toml").is_file() and (
+            parent / "prometheus" / "interface" / "main.py"
+        ).is_file():
             return parent
     # Fallback: assume cwd is the source root.
     return Path.cwd()
@@ -237,6 +239,7 @@ async def _run_one(
 
     start = time.monotonic()
     challenge_dir: Path | None = None
+    host_port: int = 0
     try:
         # 2. Ensure repo + build + start.
         challenge_dir = fetch_challenge(ch.id, dest_root)
@@ -329,7 +332,11 @@ async def _run_one(
         vuln_count=vuln_count,
         notes=(
             f"target=http://127.0.0.1:{host_port}; "
-            + (watch_result.last_vuln_titles[0] if watch_result and watch_result.last_vuln_titles else "")
+            + (
+                watch_result.last_vuln_titles[0]
+                if watch_result and watch_result.last_vuln_titles
+                else ""
+            )
         ),
         snippet=watch_result.snippet if watch_result else "",
         match_path=watch_result.match_path if watch_result else "",
@@ -342,16 +349,22 @@ async def _run_one(
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    # ``--ids`` defaults to "" in argparse; main() rewrites that to
+    # the full pilot before we get here. Treat empty defensively.
+    if not args.ids:
+        args.ids = ",".join(ch.id for ch in PILOT)
     if not args.ids:
         print("No challenge ids supplied. Use --ids XBEN-001-24,...", file=sys.stderr)
         return 2
     try:
-        challenges = resolve(args.ids)
+        challenges = resolve(args.ids.split(",") if isinstance(args.ids, str) else args.ids)
     except KeyError as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
-    dest_root = Path(args.dest_root) if args.dest_root else Path.home() / ".prometheus" / "eval" / "xbow"
+    dest_root = (
+        Path(args.dest_root) if args.dest_root else Path.home() / ".prometheus" / "eval" / "xbow"
+    )
     dest_root.mkdir(parents=True, exist_ok=True)
 
     run_id = args.run_id or make_run_id()
@@ -398,7 +411,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
             rows.append(item)
         append_row(rows[-1], jsonl)
         verdict = "✅" if rows[-1].passed else "❌"
-        print(f"  {verdict}  {rows[-1].challenge_id}  {rows[-1].duration_s:6.1f}s   {rows[-1].error or rows[-1].notes}")
+        print(
+            f"  {verdict}  {rows[-1].challenge_id}  {rows[-1].duration_s:6.1f}s   {rows[-1].error or rows[-1].notes}"
+        )
 
     out = rdir / "report.md"
     write_report(rows, out, run_id=run_id)

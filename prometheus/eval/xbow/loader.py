@@ -261,7 +261,9 @@ def discover_host_port(challenge_dir: Path, internal_port: int = 80) -> int:
             name = s.split(":", 1)[0].strip()
             if name and name not in service_names:
                 service_names.append(name)
-    candidates = [s for s in service_names if s.lower() not in ("db", "mysql", "postgres", "mariadb")]
+    candidates = [
+        s for s in service_names if s.lower() not in ("db", "mysql", "postgres", "mariadb")
+    ]
     if not candidates:
         candidates = service_names
     if not candidates:
@@ -280,7 +282,9 @@ def discover_host_port(challenge_dir: Path, internal_port: int = 80) -> int:
             f"compose stderr tail: {proc.stderr[-300:]!r}"
         )
     host_port = int(out.rsplit(":", 1)[1])
-    logger.info("Challenge %s primary service %s is on host port %s", challenge_dir.name, primary, host_port)
+    logger.info(
+        "Challenge %s primary service %s is on host port %s", challenge_dir.name, primary, host_port
+    )
     return host_port
 
 

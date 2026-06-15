@@ -100,12 +100,8 @@ def write_report(results: Iterable[XBOWResult], dest: Path, *, run_id: str) -> P
     lines.append("")
     lines.append("## Per-challenge")
     lines.append("")
-    lines.append(
-        "| Challenge | Level | Tags | Pass | Duration | Vulns | Tokens | Notes |"
-    )
-    lines.append(
-        "|-----------|-------|------|------|----------|-------|--------|-------|"
-    )
+    lines.append("| Challenge | Level | Tags | Pass | Duration | Vulns | Tokens | Notes |")
+    lines.append("|-----------|-------|------|------|----------|-------|--------|-------|")
     for r in rows:
         verdict = "✅" if r.passed else "❌"
         notes = r.error or r.notes or ""
