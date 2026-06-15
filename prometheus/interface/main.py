@@ -429,7 +429,7 @@ Examples:
         action="append",
         dest="custom_headers",
         help="Custom HTTP header to include in ALL requests (e.g., "
-        "'X-HackerOne-Handle: stefan171'). Can be specified multiple times. "
+        "'X-HackerOne-Handle: your-h1-handle'). Can be specified multiple times. "
         "Headers are injected into the sandbox environment and the system prompt "
         "so every curl/httpx/nuclei request includes them.",
     )
@@ -776,7 +776,19 @@ def main() -> None:
     # harness. Subcommands: list, run, report.
     if len(sys.argv) > 1 and sys.argv[1] == "xbow":
         from prometheus.eval.xbow.runner import main as xbow_main
-        sys.exit(xbow_main(sys.argv[2:]))
+        # ``sys.exit`` returns the exit code; ``xbow_main`` returns an
+        # int, so we forward it directly. The trailing ``return`` is
+        # unreachable but kept for symmetry with the model dispatch
+        # above.
+        rc = xbow_main(sys.argv[2:])
+        sys.exit(rc)
+        return
+
+    # Dispatch `prometheus realvuln` to the RealVuln-Benchmark harness.
+    # Subcommands: list, run, report, score.
+    if len(sys.argv) > 1 and sys.argv[1] == "realvuln":
+        from prometheus.eval.realvuln.runner import main as realvuln_main
+        sys.exit(realvuln_main(sys.argv[2:]))
         return
 
     args = parse_arguments()

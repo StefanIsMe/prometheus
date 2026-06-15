@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Callable
+from pathlib import Path
 from datetime import UTC, datetime
 from typing import Any
 
@@ -389,19 +390,19 @@ def _backfill_external_submissions_from_notes(conn: sqlite3.Connection) -> None:
             "platform": "bugcrowd",
             "external_id": "e4c2a739-7972-493e-a988-76ad853e6175",
             "title": "PKCE Downgrade: OAuth Authorization Server Advertises Insecure 'plain' Method",
-            "triggers": ("Tal_Bugcrowd", "PKCE Downgrade", "2a224bda58fa9d90", "Not reproducible"),
+            "triggers": ("bugcrowd_triage_handle_1", "PKCE Downgrade", "2a224bda58fa9d90", "Not reproducible"),
             "status": "not_reproducible",
             "priority": "P1",
-            "triager": "Tal_Bugcrowd",
+            "triager": "bugcrowd_triage_handle_1",
         },
         {
             "platform": "bugcrowd",
             "external_id": "b0a131b8-85c3-4715-9362-fc7ec7fd1569",
             "title": "Account Enumeration via Differential Login Responses on auth.openai.com",
-            "triggers": ("hexghost_bugcrowd", "Account Enumeration", "1bede986504b2009", "Username Enumeration"),
+            "triggers": ("bugcrowd_triage_handle_2", "Account Enumeration", "1bede986504b2009", "Username Enumeration"),
             "status": "informative",
             "priority": "P5",
-            "triager": "hexghost_bugcrowd",
+            "triager": "bugcrowd_triage_handle_2",
         },
     ]
 
@@ -482,12 +483,11 @@ def init_prometheus_db(db_path: str | Path | None = None) -> Path:
     apply all migrations. Idempotent: re-calling on a non-empty DB is a
     no-op that still returns the path.
     """
-    from pathlib import Path as _Path
     if db_path is None:
         # Default to ~/.prometheus/prometheus.db, matching KnowledgeStore.
-        candidate = _Path.home() / ".prometheus" / "prometheus.db"
+        candidate = Path.home() / ".prometheus" / "prometheus.db"
     else:
-        candidate = _Path(db_path)
+        candidate = Path(db_path)
     candidate.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(candidate))
     try:

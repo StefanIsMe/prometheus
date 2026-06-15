@@ -1164,8 +1164,8 @@ def _check_consecutive_tool_errors(
             # consecutive count per (agent, gate) for the escape hatch but
             # do NOT count it against the tool-error circuit breaker (the
             # old code conflated these and killed agents for following
-            # protocol, which is what caused the 12-min withapurpose.co
-            # stall).
+            # protocol, which is what caused the 12-min stall we observed
+            # in a representative gate-confusion scan.
             gate_name = _classify_gate_block(output) or "unknown"
             refusal_count = _record_gate_block(agent_id, gate_name)
             if refusal_count >= _MAX_CONSECUTIVE_GATE_BLOCKS:
@@ -1261,11 +1261,11 @@ _consecutive_gate_blocks: dict[str, dict[str, int]] = {}  # agent_id -> {gate ->
 # ---------------------------------------------------------------------------
 # The LLM can pattern-match "Status 200" / "CVE-2025-XXXX vulnerable" in
 # preliminary probe output and write "**Major finding!**" in its
-# reasoning — without ever calling the file-finding tool. (Real example:
-# the war.gov 2026-06-13 scan saw the LLM claim a "Critical finding" on
-# CVE-2025-64095 based on a `100 Continue` header that got read as
-# `200 OK`; the agent never invoked create_vulnerability_report and
-# the user had to cancel the scan.)
+# reasoning — without ever calling the file-finding tool. (Real example
+# we saw: an LLM claim a "Critical finding" on a CVE based on a
+# `100 Continue` header that got read as `200 OK`; the agent never
+# invoked create_vulnerability_report and the user had to cancel the
+# scan.)
 #
 # This tracker fires an UNFILED_CLAIM event when a "claimed finding"
 # phrase appears in an llm_message but no corresponding
@@ -1277,9 +1277,9 @@ _consecutive_gate_blocks: dict[str, dict[str, int]] = {}  # agent_id -> {gate ->
 # Phrases that suggest the LLM believes a finding exists. Lowercased
 # substring match against the WHOLE text (not just prefixes) so we
 # catch both "**Critical finding**" and "Critical findings:" and
-# "**CONFIRMED FINDINGS**". Real MiniMax-M3 / DeepSeek style from the
-# withapurpose.co scan was: "Critical findings:" with no leading
-# asterisks, so we accept both. Longest phrases first so
+# "**CONFIRMED FINDINGS**". Real model style we observed was:
+# "Critical findings:" with no leading asterisks, so we accept both.
+# Longest phrases first so
 # "**critical finding" wins over "**critical".
 _CLAIM_PHRASES: tuple[str, ...] = (
     "**critical finding",
@@ -1438,8 +1438,8 @@ def _emit_stream_event_to_comms(agent_id: str, event: Any) -> None:
     # Cheap throttle keyed on (agent, event-type) so the SDK's natural
     # bursts of the same event type don't drown the JSONL, but different
     # event types from the same agent still pass through. (Pure agent_id
-    # keying caused a 4-min flat spot on withapurpose.co when the root
-    # agent was reasoning + tool-calling in a tight loop.)
+    # keying caused a 4-min flat spot in a representative scan when
+    # the root agent was reasoning + tool-calling in a tight loop.)
     last = _LAST_COMMS_EVENT_TS.get((agent_id, etype), 0.0)
     now = time.monotonic()
     if (now - last) < (_COMMS_THROTTLE_MS / 1000.0) and etype in {
@@ -1477,7 +1477,7 @@ def _emit_stream_event_to_comms(agent_id: str, event: Any) -> None:
             # Comms stream is the *record*, not a display surface. The
             # full output goes in; the tailer (or any consumer) is free
             # to truncate at render time. Truncating at the source hid
-            # real evidence before — e.g. the war.gov scan where the 200
+            # real evidence before — e.g. a prior scan where the 200
             # OK + 404 Not Found body was cut to "200 OK" and the agent
             # (and operator) pattern-matched to "reachable."
             output = getattr(event.item, "output", "") or ""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -35,7 +36,7 @@ _BROWSERCODE_MOUNT = "/opt/browsercode"
 
 # Scan pipeline script mount — the script isn't in the upstream prometheus-sandbox image.
 # Mount the entire scripts/ directory so Docker can create /scripts/ as a mount point.
-_PIPELINE_SCRIPTS_HOST = Path("/mnt/hdd/prometheus-data/prometheus-source/scripts")
+_PIPELINE_SCRIPTS_HOST = Path(os.environ.get("PROMETHEUS_SCRIPTS_DIR", str(Path(__file__).resolve().parent.parent / "scripts")))
 _PIPELINE_SCRIPTS_MOUNT = "/scripts"
 
 # Extra bind mounts pending injection into the next Docker container creation.

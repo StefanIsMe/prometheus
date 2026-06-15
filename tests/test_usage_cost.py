@@ -12,7 +12,7 @@ from pathlib import Path
 
 # Add the prometheus source root to sys.path so we can import the module
 # under test without depending on the full Prometheus package install.
-SOURCE_ROOT = Path("/mnt/hdd/prometheus-data/prometheus-source")
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
@@ -128,7 +128,7 @@ def test_estimate_litellm_cost_bare_model_gets_prefix_re_added(monkeypatch, capl
     )
 
     # Build a minimal LlmConfig with TokenRouter containing MiniMax-M3,
-    # mirroring the user's actual /home/stefan/.prometheus/llm.yaml.
+    # mirroring the user's actual llm.yaml layout.
     fake_config = LlmConfig(
         providers={
             "TokenRouter": ProviderConfig(

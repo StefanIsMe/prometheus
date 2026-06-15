@@ -96,6 +96,6 @@ api_keys:
 logging:
   level: "INFO"
   format: "json"
-  file: "/mnt/hdd/prometheus-data/logs/prometheus.log"
+  file: "${PROMETHEUS_DATA_DIR:-~/.prometheus}/logs/prometheus.log"
   max_size_mb: 100
   backup_count: 5

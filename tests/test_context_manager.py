@@ -8,7 +8,7 @@ import sys
 import os
 
 # Add the prometheus source to path
-sys.path.insert(0, "/mnt/hdd/prometheus-data/prometheus-source")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from prometheus.core.context_manager import (
     ContextManagedSession,

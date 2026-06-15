@@ -10,7 +10,7 @@ These tests:
 
   1. Unit-test the helper directly with a fake exception sequence.
   2. Unit-test that user-input errors are NOT retried (deterministic).
-  3. E2E log-replay: load ``prometheus_runs/1win-com_bd4f/prometheus.log``,
+  3. E2E log-replay: load a representative ``prometheus_runs/<id>/prometheus.log``,
      count the historic ``list_requests failed`` lines, and assert that
      the new code would have produced zero of them (i.e. the retry
      helper recovers from the same flake pattern).
@@ -247,5 +247,5 @@ def test_log_replay_list_requests_would_be_resolved():
 
         with patch.object(caido_api, "_CAIDO_RETRY_BASE_DELAY", 0.001):
             result = asyncio.run(caido_retry("replay", flaky))
-        assert result == {"ok": True}, f"helper failed to recover from {_msg!r}"
-        assert calls["n"] == 2, f"helper should have retried exactly once for {_msg!r}"
+        assert result == {"ok": True}, f"helper failed to recover from {msg!r}"
+        assert calls["n"] == 2, f"helper should have retried exactly once for {msg!r}"

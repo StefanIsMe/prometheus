@@ -650,7 +650,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) < 2:
         print("Usage: python oauth_validation.py <base_url> [client_id] [redirect_uri]")
-        print("Example: python oauth_validation.py https://auth.openai.com app_EMoamEEZ73f0CkXaXp7hrann https://chatgpt.com/api/auth/callback")
+        print("Example: python oauth_validation.py https://auth.example.com app_example_client_id https://example.com/api/auth/callback")
         sys.exit(1)
 
     url = sys.argv[1]

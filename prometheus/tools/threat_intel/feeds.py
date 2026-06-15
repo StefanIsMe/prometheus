@@ -6,9 +6,11 @@ import csv
 import gzip
 import io
 import logging
+import os
 import subprocess
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -560,7 +562,9 @@ def ingest_cisa_advisories(db: ThreatIntelDB) -> dict[str, Any]:
 # Exploit-DB (Git clone for offline search)
 # ---------------------------------------------------------------------------
 
-EXPLOITDB_PATH = "/mnt/hdd/prometheus-data/exploitdb"
+EXPLOITDB_PATH = str(
+    Path(os.environ.get("PROMETHEUS_DATA_DIR", str(Path.home() / ".prometheus"))) / "exploitdb"
+)
 
 
 def ingest_exploitdb(db: ThreatIntelDB) -> dict[str, Any]:

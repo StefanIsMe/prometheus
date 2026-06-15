@@ -1,6 +1,6 @@
 """Tests for the dedupe connection-error retry wrapper.
 
-Background: the 1win-com_bd4f run died in the dedupe step on
+Background: a representative run died in the dedupe step on
 ``openai.APIConnectionError``. Phase 4D wraps the dedupe model call
 in a 3-attempt retry with exponential backoff. After exhaustion the
 helper returns a no-op (not a crash) so the report writer continues.

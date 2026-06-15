@@ -87,7 +87,8 @@ else
 fi
 
 # --- 5b. Check inode availability ---
-INODE_PCT=$(df -i /mnt/hdd | awk 'NR==2 {print $5}' | tr -d '%')
+INODE_CHECK_PATH="${PROMETHEUS_DATA_DIR:-/}"
+INODE_PCT=$(df -i "$INODE_CHECK_PATH" | awk 'NR==2 {print $5}' | tr -d '%')
 if [ "$INODE_PCT" -gt 90 ]; then
     log_fail "HDD inode usage at ${INODE_PCT}% — docker pull will likely fail. Run: docker system prune -a -f"
     ERRORS=$((ERRORS + 1))

@@ -8,8 +8,8 @@ Usage:
     from prometheus.agents.browser_session import BrowserSession
 
     async with BrowserSession(target="syfe.com") as session:
-        await session.create_account(email="user@wearehackerone.com", password="Test123!")
-        await session.login(email="user@wearehackerone.com", password="Test123!")
+        await session.create_account(email="user@example.com", password="Test123!")
+        await session.login(email="user@example.com", password="Test123!")
         apis = await session.harvest_apis(pages=["/dashboard", "/portfolio"])
 """
 
@@ -44,7 +44,7 @@ class TargetProfile:
     signup_path: str = "/signup"
     login_path: str = "/login"
     pages_to_scan: list[str] = field(default_factory=lambda: ["/"])
-    email_domain: str = "@wearehackerone.com"
+    email_domain: str = "@example.com"
     signup_selectors: dict[str, str] = field(default_factory=dict)
     login_selectors: dict[str, str] = field(default_factory=dict)
     api_patterns: list[str] = field(default_factory=lambda: [
@@ -499,14 +499,19 @@ class BrowserSession:
 
 def open_browser(url: str = "") -> None:
     """Open a URL in the local Chrome instance via CDP."""
+    import os
     import subprocess
     import sys
 
     chrome_path = "/usr/bin/google-chrome-stable"
+    user_data_dir = os.environ.get(
+        "PROMETHEUS_CHROME_USER_DATA_DIR",
+        str(Path.home() / ".cache" / "prometheus" / "chrome"),
+    )
     cmd = [
         chrome_path,
         "--remote-debugging-port=9222",
-        "--user-data-dir=/mnt/hdd/hermes-chrome-cdp",
+        f"--user-data-dir={user_data_dir}",
     ]
     if url:
         cmd.append(url)

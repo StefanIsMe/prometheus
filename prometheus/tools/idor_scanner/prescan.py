@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -12,8 +13,8 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = Path("/mnt/hdd/prometheus-data/dot-prometheus/prometheus.db")
-EVIDENCE_DIR = Path("/mnt/hdd/prometheus-data/idor_evidence")
+DB_PATH = Path(os.environ.get("PROMETHEUS_DATA_DIR", str(Path.home() / ".prometheus"))) / "prometheus.db"
+EVIDENCE_DIR = Path(os.environ.get("PROMETHEUS_DATA_DIR", str(Path.home() / ".prometheus"))) / "idor_evidence"
 EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -89,11 +90,17 @@ def _match_target_to_program(target_url: str) -> dict[str, Any] | None:
 
 
 def _derive_email(handle: str, platform: str) -> str:
-    """Derive the email alias from handle and platform."""
+    """Derive the email alias from handle and platform.
+
+    Defaults to ``@example.com`` so demo accounts don't accidentally
+    resolve to a real platform address. Override per-program via the
+    ``email_domain`` field on a ``TargetProfile`` (see
+    ``target_profiles.py``).
+    """
     if platform == "bugcrowd":
-        return f"{handle}@bugcrowdninja.com"
+        return f"{handle}@example.com"
     elif platform == "hackerone":
-        return f"{handle}@wearehackerone.com"
+        return f"{handle}@example.com"
     return f"{handle}@example.com"
 
 

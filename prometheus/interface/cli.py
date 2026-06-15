@@ -2,10 +2,12 @@ import asyncio
 import atexit
 import contextlib
 import logging
+import os
 import signal
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
@@ -43,7 +45,7 @@ async def run_cli(args: Any) -> None:  # noqa: PLR0915
     if settings.runtime.runs_dir:
         configure_runs_dir(settings.runtime.runs_dir)
     else:
-        configure_runs_dir("/mnt/hdd/prometheus-data")
+        configure_runs_dir(os.environ.get("PROMETHEUS_DATA_DIR") or str(Path.home() / ".prometheus"))
 
     console = Console()
 

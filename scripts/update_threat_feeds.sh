@@ -3,7 +3,7 @@
 # Sources: CISA KEV, GitHub Security Advisories (GHSA), NVD trending CVEs
 set -euo pipefail
 
-FEED_DIR="/mnt/hdd/prometheus-data/threat-intel"
+FEED_DIR="${PROMETHEUS_DATA_DIR:-$HOME/.prometheus}/threat-intel"
 mkdir -p "$FEED_DIR"
 LOG="$FEED_DIR/update.log"
 TODAY=$(date -Iseconds)

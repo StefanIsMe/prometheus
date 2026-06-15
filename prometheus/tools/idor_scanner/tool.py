@@ -22,6 +22,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import random
 import re
 import sqlite3
@@ -43,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Evidence storage
 # ---------------------------------------------------------------------------
 
-EVIDENCE_DIR = Path("/mnt/hdd/prometheus-data/idor_evidence")
+EVIDENCE_DIR = Path(os.environ.get("PROMETHEUS_DATA_DIR", str(Path.home() / ".prometheus"))) / "idor_evidence"
 EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -214,7 +215,7 @@ def _save_finding_to_store(
     finding_id = str(uuid.uuid4())[:16]
     now = datetime.now(UTC).isoformat()
 
-    db_path = Path("/mnt/hdd/prometheus-data/dot-prometheus/prometheus.db")
+    db_path = Path(os.environ.get("PROMETHEUS_DATA_DIR", str(Path.home() / ".prometheus"))) / "prometheus.db"
     conn = sqlite3.connect(str(db_path))
 
     try:
@@ -433,7 +434,7 @@ def main():
     parser.add_argument(
         "--email", "-e",
         default=f"prometheus{random.randint(1000, 9999)}",
-        help="Email prefix for @wearehackerone.com (default: auto-generated)",
+        help="Email prefix for @example.com (default: auto-generated)",
     )
     parser.add_argument(
         "--password", "-p",

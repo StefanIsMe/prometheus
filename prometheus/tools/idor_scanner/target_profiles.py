@@ -44,7 +44,7 @@ TARGET_PROFILES = {
         signup_path="",
         login_path="/login",
         pages_to_scan=["/", "/projects", "/features", "/environments", "/account"],
-        email_domain="@bugcrowdninja.com",
+        email_domain="@example.com",
         api_patterns=[
             r"/api/v2/", r"/internal/", r"/private/",
             r"/projects?", r"/environments?", r"/flags?", r"/features?",

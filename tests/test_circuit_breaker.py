@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-SOURCE_ROOT = Path("/mnt/hdd/prometheus-data/prometheus-source")
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
@@ -74,7 +74,7 @@ def test_is_tool_output_error_ignores_empty_and_non_string():
 # ---------------------------------------------------------------------------
 
 def test_is_infra_detects_enospc():
-    """The exact failure mode from the war.gov scan: PTY pidfile ENOSPC."""
+    """The exact failure mode from the ENOSPC reproducer: PTY pidfile ENOSPC."""
     out = "sh: 1: cannot create /tmp/sandbox-docker-archive/abc_pty.pid: No space left on device"
     assert _is_infrastructure_error(out) is True
 
@@ -160,14 +160,14 @@ def test_classify_pidfile_uses_sandbox_category():
 # ---------------------------------------------------------------------------
 
 def test_breaker_does_not_kill_agent_on_infra_errors_within_threshold(caplog):
-    """The exact war.gov bug: 10 ENOSPC errors must NOT trip the breaker.
+    """The exact ENOSPC reproducer: 10 ENOSPC errors must NOT trip the breaker.
 
     With the fix, infra errors are tracked under a separate (higher)
     threshold. 10 ENOSPC errors should leave the agent alive.
     """
     agent_id = "test-agent-enospc"
     _reset_breaker_state(agent_id)
-    # Simulate the harness returning the exact war.gov PTY pidfile error
+    # Simulate the harness returning the exact PTY pidfile error
     # 10 times in a row.  All 10 events: tool_called then tool_output.
     infra_output = (
         "sh: 1: cannot create /tmp/sandbox-docker-archive/xyz_pty.pid: "

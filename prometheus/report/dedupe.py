@@ -194,9 +194,10 @@ async def check_duplicate(
         model = MultiProvider(unknown_prefix_mode="model_id").get_model(resolved_model)
         response = None
         # Phase 4D: wrap the dedupe model call in a small retry loop for
-        # transient connection errors. The 1win-com_bd4f run died here on
-        # an ``openai.APIConnectionError`` mid-iteration; after exhaustion
-        # we return a no-op so the report writer does not crash.
+        # transient connection errors. A representative run died here
+        # on an ``openai.APIConnectionError`` mid-iteration; after
+        # exhaustion we return a no-op so the report writer does not
+        # crash.
         from openai import APIConnectionError
         try:
             import httpx

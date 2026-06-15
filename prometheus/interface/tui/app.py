@@ -3,6 +3,7 @@ import asyncio
 import atexit
 import contextlib
 import logging
+import os
 import signal
 import sys
 import threading
@@ -2232,7 +2233,7 @@ async def run_tui(args: argparse.Namespace) -> None:
     if _settings.runtime.runs_dir:
         configure_runs_dir(_settings.runtime.runs_dir)
     else:
-        configure_runs_dir("/mnt/hdd/prometheus-data")
+        configure_runs_dir(os.environ.get("PROMETHEUS_DATA_DIR") or str(Path.home() / ".prometheus"))
 
     app = prometheusTUIApp(args)
     await app.run_async()

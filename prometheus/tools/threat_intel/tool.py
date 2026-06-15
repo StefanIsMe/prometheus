@@ -80,7 +80,10 @@ async def warm_threat_intel() -> dict[str, Any]:
         logger.warning("Threat intel warm: CISA KEV failed: %s", exc)
 
     # GHSA pre-cache from daily feed download
-    feed_dir = "/mnt/hdd/prometheus-data/threat-intel"
+    feed_dir = os.path.join(
+        os.environ.get("PROMETHEUS_DATA_DIR", os.path.expanduser("~/.prometheus")),
+        "threat-intel",
+    )
     ghsa_files = sorted(glob_mod.glob(os.path.join(feed_dir, "ghsa-*.json")))
     if ghsa_files:
         ghsa_count = 0
