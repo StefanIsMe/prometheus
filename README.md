@@ -311,6 +311,7 @@ to the docs:
 - [Advanced configuration](docs/advanced/configuration.mdx)
 - [Skills](docs/advanced/skills.mdx)
 - [Sandbox backends](docs/tools/sandbox.mdx)
+- [Benchmarks](docs/benchmarks.md) (XBOW validation-benchmarks harness)
 
 ---
 
