@@ -230,6 +230,7 @@ async def warm_up_llm() -> None:
         model = MultiProvider(unknown_prefix_mode="model_id").get_model(
             normalize_model_name(llm.model or "")
         )
+
         async def _consume_warmup_stream() -> None:
             async for _ in model.stream_response(
                 system_instructions="You are a helpful assistant.",
@@ -429,7 +430,7 @@ Examples:
         action="append",
         dest="custom_headers",
         help="Custom HTTP header to include in ALL requests (e.g., "
-        "'X-HackerOne-Handle: stefan171'). Can be specified multiple times. "
+        "'X-HackerOne-Handle: your-h1-handle'). Can be specified multiple times. "
         "Headers are injected into the sandbox environment and the system prompt "
         "so every curl/httpx/nuclei request includes them.",
     )
@@ -639,9 +640,7 @@ def display_completion_message(args: argparse.Namespace, results_path: Path) -> 
     console.print("\n")
     console.print(panel)
     console.print()
-    console.print(
-        "[#60a5fa]prometheus[/]"
-    )
+    console.print("[#60a5fa]prometheus[/]")
     console.print()
 
 
@@ -749,13 +748,15 @@ def _load_scans_file(path: str) -> list[dict[str, Any]]:
             if instr_path.exists():
                 instruction = instr_path.read_text(encoding="utf-8").strip()
 
-        scans.append({
-            "name": entry.get("name") or entry["targets"][0].split("//")[-1].split("/")[0],
-            "targets": entry["targets"],
-            "instruction": instruction,
-            "mode": entry.get("mode", "deep"),
-            "headers": entry.get("headers", []),
-        })
+        scans.append(
+            {
+                "name": entry.get("name") or entry["targets"][0].split("//")[-1].split("/")[0],
+                "targets": entry["targets"],
+                "instruction": instruction,
+                "mode": entry.get("mode", "deep"),
+                "headers": entry.get("headers", []),
+            }
+        )
 
     return scans
 
@@ -769,7 +770,29 @@ def main() -> None:
     # Dispatch `prometheus model` before parse_arguments, which expects scan flags
     if len(sys.argv) > 1 and sys.argv[1] == "model":
         from prometheus.interface.model_cli import run_model_cli
+
         run_model_cli(sys.argv[2:])
+        return
+
+    # Dispatch `prometheus xbow` to the XBOW validation-benchmarks
+    # harness. Subcommands: list, run, report.
+    if len(sys.argv) > 1 and sys.argv[1] == "xbow":
+        from prometheus.eval.xbow.runner import main as xbow_main
+
+        # ``sys.exit`` returns the exit code; ``xbow_main`` returns an
+        # int, so we forward it directly. The trailing ``return`` is
+        # unreachable but kept for symmetry with the model dispatch
+        # above.
+        rc = xbow_main(sys.argv[2:])
+        sys.exit(rc)
+        return
+
+    # Dispatch `prometheus realvuln` to the RealVuln-Benchmark harness.
+    # Subcommands: list, run, report, score.
+    if len(sys.argv) > 1 and sys.argv[1] == "realvuln":
+        from prometheus.eval.realvuln.runner import main as realvuln_main
+
+        sys.exit(realvuln_main(sys.argv[2:]))
         return
 
     args = parse_arguments()
@@ -792,6 +815,7 @@ def main() -> None:
     # Initialise the multi-scan orchestrator singleton so it's
     # available to any code that imports it later.
     from prometheus.core.orchestrator import ScanOrchestrator
+
     ScanOrchestrator()
 
     # Handle --scans-file: register targets and launch parallel scans
@@ -813,11 +837,13 @@ def main() -> None:
             targets_list = []
             for target in scan["targets"]:
                 target_type, target_dict = infer_target_type(target)
-                targets_list.append({
-                    "type": target_type,
-                    "details": target_dict,
-                    "original": target,
-                })
+                targets_list.append(
+                    {
+                        "type": target_type,
+                        "details": target_dict,
+                        "original": target,
+                    }
+                )
 
             scan_config = {
                 "targets": targets_list,
@@ -838,7 +864,9 @@ def main() -> None:
                 scan_config=scan_config,
             )
             target_ids.append((result["id"], scan["name"], len(scan["targets"])))
-            console.print(f"  [green]+[/] Registered: [cyan]{scan['name']}[/] -- {len(scan['targets'])} targets")
+            console.print(
+                f"  [green]+[/] Registered: [cyan]{scan['name']}[/] -- {len(scan['targets'])} targets"
+            )
 
         console.print(f"\n[bold]Launching {len(target_ids)} scans via orchestrator...[/]")
 
@@ -851,7 +879,9 @@ def main() -> None:
                 continue
             active, max_c = orchestrator.get_capacity()
             if active >= max_c:
-                console.print(f"  [yellow]![/] {name}: at capacity ({active}/{max_c}), queuing not yet implemented")
+                console.print(
+                    f"  [yellow]![/] {name}: at capacity ({active}/{max_c}), queuing not yet implemented"
+                )
                 continue
             try:
                 scan_id = orchestrator.launch_scan(target_id)
@@ -869,6 +899,7 @@ def main() -> None:
 
         # Signal handling: graceful shutdown on Ctrl+C / SIGTERM
         import signal as _signal
+
         _shutdown_requested = threading.Event()
 
         def _signal_handler(signum, _frame):
@@ -889,15 +920,28 @@ def main() -> None:
             # Kill any orphaned prometheus sandbox containers
             try:
                 import subprocess
+
                 result = subprocess.run(
-                    ["docker", "ps", "--filter", "ancestor=prometheus-sandbox:local",
-                     "--format", "{{.ID}}"],
-                    capture_output=True, text=True, timeout=10,
+                    [
+                        "docker",
+                        "ps",
+                        "--filter",
+                        "ancestor=prometheus-sandbox:local",
+                        "--format",
+                        "{{.ID}}",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
                 container_ids = result.stdout.strip().split()
                 if container_ids:
-                    subprocess.run(["docker", "stop", *container_ids], capture_output=True, timeout=30)
-                    subprocess.run(["docker", "rm", *container_ids], capture_output=True, timeout=10)
+                    subprocess.run(
+                        ["docker", "stop", *container_ids], capture_output=True, timeout=30
+                    )
+                    subprocess.run(
+                        ["docker", "rm", *container_ids], capture_output=True, timeout=10
+                    )
                     logger.info("Cleaned up %d orphaned containers", len(container_ids))
             except Exception:
                 logger.debug("Container cleanup failed", exc_info=True)
@@ -920,8 +964,7 @@ def main() -> None:
 
                 status = instance.status
                 findings = (
-                    len(instance.report_state.vulnerability_reports)
-                    if instance.report_state else 0
+                    len(instance.report_state.vulnerability_reports) if instance.report_state else 0
                 )
 
                 if status == "running":
@@ -939,8 +982,7 @@ def main() -> None:
 
                 err_suffix = f" -- {instance.error[:80]}" if instance.error else ""
                 status_lines.append(
-                    f"  {status_icon} {name}: {status} | "
-                    f"findings={findings}{err_suffix}"
+                    f"  {status_icon} {name}: {status} | findings={findings}{err_suffix}"
                 )
 
                 # Print new comms events for this scan
@@ -969,13 +1011,15 @@ def main() -> None:
 
             # Print status panel
             panel_text = "\n".join(status_lines)
-            console.print(Panel(
-                panel_text,
-                title="[bold white]SCAN STATUS",
-                title_align="left",
-                border_style="#60a5fa",
-                padding=(0, 1),
-            ))
+            console.print(
+                Panel(
+                    panel_text,
+                    title="[bold white]SCAN STATUS",
+                    title_align="left",
+                    border_style="#60a5fa",
+                    padding=(0, 1),
+                )
+            )
 
             if all_done:
                 break
@@ -1004,8 +1048,7 @@ def main() -> None:
             if instance is None:
                 continue
             findings = (
-                len(instance.report_state.vulnerability_reports)
-                if instance.report_state else 0
+                len(instance.report_state.vulnerability_reports) if instance.report_state else 0
             )
             status = instance.status
             style = "green" if status == "completed" else "red" if status == "failed" else "yellow"

@@ -1,7 +1,7 @@
 """Tests for the empty-model-input fail-fast path.
 
-The exact bug from the war.gov scan: after compaction the model input
-became 2 tokens (just '[]' = str(empty list)), and the SDK's
+The exact bug from a representative scan: after compaction the model
+input became 2 tokens (just '[]' = str(empty list)), and the SDK's
 "Prepared model input is empty" RuntimeError was retried twice with
 backoff, wasting ~5 minutes of scan time before the agent was finally
 parked as stopped.
@@ -11,6 +11,7 @@ call and raise EmptyModelInputError, which short-circuits straight to
 "stopped" status. The remaining SDK RuntimeError path is also
 tightened to a single retry.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,7 +21,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-SOURCE_ROOT = Path("/mnt/hdd/prometheus-data/prometheus-source")
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
@@ -39,6 +40,7 @@ def _run(coro):
 # ---------------------------------------------------------------------------
 # _session_has_content
 # ---------------------------------------------------------------------------
+
 
 def test_session_has_content_none_session():
     """No session at all → no content."""
@@ -75,6 +77,7 @@ def test_session_has_content_treats_read_failure_as_has_content():
 # EmptyModelInputError class
 # ---------------------------------------------------------------------------
 
+
 def test_empty_model_input_error_is_agents_exception():
     """It must be an AgentsException so existing exception handlers see it."""
     assert issubclass(EmptyModelInputError, AgentsException)
@@ -88,8 +91,9 @@ def test_empty_model_input_error_carries_useful_message():
 
 
 # ---------------------------------------------------------------------------
-# End-to-end: simulate the war.gov scenario
+# End-to-end: simulate the post-compaction scenario
 # ---------------------------------------------------------------------------
+
 
 def test_empty_input_does_not_retry_when_session_also_empty():
     """Sanity: the fail-fast path doesn't even attempt the LLM call.

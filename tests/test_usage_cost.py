@@ -4,6 +4,7 @@ Focus: the cost-lookup path must not raise on unknown LiteLLM provider
 prefixes (TokenRouter, internal gateways, etc.) and must not pollute the
 log with full tracebacks for expected unknown-model failures.
 """
+
 from __future__ import annotations
 
 import logging
@@ -12,7 +13,7 @@ from pathlib import Path
 
 # Add the prometheus source root to sys.path so we can import the module
 # under test without depending on the full Prometheus package install.
-SOURCE_ROOT = Path("/mnt/hdd/prometheus-data/prometheus-source")
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
@@ -128,19 +129,21 @@ def test_estimate_litellm_cost_bare_model_gets_prefix_re_added(monkeypatch, capl
     )
 
     # Build a minimal LlmConfig with TokenRouter containing MiniMax-M3,
-    # mirroring the user's actual /home/stefan/.prometheus/llm.yaml.
+    # mirroring the user's actual llm.yaml layout.
     fake_config = LlmConfig(
         providers={
             "TokenRouter": ProviderConfig(
                 name="TokenRouter",
                 base_url="https://api.tokenrouter.com/v1",
                 protocol=Protocol.OPENAI,
-                models={"MiniMax-M3": ModelSpec(
-                    provider_name="TokenRouter",
-                    model_id="MiniMax-M3",
-                    tier=Tier.HARD,
-                    max_tokens=65536,
-                )},
+                models={
+                    "MiniMax-M3": ModelSpec(
+                        provider_name="TokenRouter",
+                        model_id="MiniMax-M3",
+                        tier=Tier.HARD,
+                        max_tokens=65536,
+                    )
+                },
             ),
         }
     )
@@ -175,8 +178,17 @@ def test_known_provider_set_includes_tokenrouter_false():
 
 def test_known_provider_set_covers_all_advertised_providers():
     """Make sure we have a sane coverage of common providers."""
-    expected = {"openai", "anthropic", "gemini", "groq", "openrouter",
-                "deepseek", "bedrock", "huggingface", "replicate"}
+    expected = {
+        "openai",
+        "anthropic",
+        "gemini",
+        "groq",
+        "openrouter",
+        "deepseek",
+        "bedrock",
+        "huggingface",
+        "replicate",
+    }
     missing = expected - _LITELLM_KNOWN_PROVIDER_PREFIXES
     assert missing == set(), f"missing providers from known set: {missing!r}"
 

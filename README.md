@@ -58,8 +58,9 @@ an **Always-Rejected matrix** (≥20 reject rules) and a
 **Conditionally-Valid chain table** (≥12 chain patterns), and finally
 de-duplicated and chained before being written to the report.
 
-The full pipeline, gates, and playbooks are documented in
-[INTEGRATION_PLAN.md](INTEGRATION_PLAN.md).
+The full pipeline, gates, and playbooks are documented under
+[prometheus/playbooks/](prometheus/playbooks/) and
+[prometheus/skills/](prometheus/skills/).
 
 ---
 
@@ -87,8 +88,7 @@ Prometheus is a hard fork of [Strix](https://github.com/usestrix/strix)
 
 Per-file attribution is preserved in the module docstrings under
 `prometheus/` and the playbook headers under `prometheus/playbooks/`. The
-full lineage plan is in [INTEGRATION_PLAN.md](INTEGRATION_PLAN.md); see
-[AUTHORS](AUTHORS) for a structured attribution list.
+full attribution is in [AUTHORS](AUTHORS).
 
 ---
 
@@ -291,9 +291,9 @@ prometheus/
 └── utils/          # Small helpers
 ```
 
-A few root-level files are probe artifacts and helper scripts used
-during local development (`jquery-1.8.1`, `x.com`,
-`prometheus_comms.py`, `prometheus-safe-launch.sh`, `prometheus_tail.sh`).
+A few root-level files are helper scripts used
+during local development (`prometheus_comms.py`, `prometheus-safe-launch.sh`,
+`prometheus_tail.sh`).
 The canonical tool is the `prometheus` console script installed by the
 Python package.
 
@@ -311,6 +311,7 @@ to the docs:
 - [Advanced configuration](docs/advanced/configuration.mdx)
 - [Skills](docs/advanced/skills.mdx)
 - [Sandbox backends](docs/tools/sandbox.mdx)
+- [Benchmarks](docs/benchmarks.md) (XBOW validation-benchmarks harness)
 
 ---
 
