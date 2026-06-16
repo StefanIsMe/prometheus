@@ -265,7 +265,7 @@ async def _run_one(
 
         # 4. Run prometheus against the live target.
         try:
-            _prom_proc = _run_prometheus(  # noqa: F841  — kept for diagnostic logging
+            _prom_proc = _run_prometheus(  # codeql[py/unused-local-variable] : bound in case a follow-up logging path wants the Popen handle
                 target=target,
                 engagement_name=ch.id,
                 timeout_s=per_challenge_timeout,
@@ -273,7 +273,7 @@ async def _run_one(
         except subprocess.TimeoutExpired as exc:
             error = f"prometheus timed out after {per_challenge_timeout}s"
             logger.warning("%s: %s", ch.id, error)
-            _prom_proc = None  # type: ignore[assignment]
+            _prom_proc = None  # type: ignore[assignment]  # codeql[py/unused-local-variable] : reset for the same diagnostic purpose
         except Exception as exc:  # noqa: BLE001
             error = f"prometheus launch failed: {exc!r}"
             logger.warning("%s: %s", ch.id, error)

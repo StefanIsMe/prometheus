@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 _COMMS_GLOBAL = Path.home() / ".prometheus" / "comms" / "global"
 
-_instance: ScanNotifications | None = None
+_instance: ScanNotifications | None = None  # codeql[py/unused-global-variable] : read via `global` inside ScanNotifications.__new__
 _instance_lock = threading.Lock()
 
 

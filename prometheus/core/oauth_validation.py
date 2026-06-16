@@ -323,7 +323,6 @@ def validate_pkce_downgrade(
     """
     evidence = []
     details: dict[str, Any] = {}
-    severity = "info"
     validated = False
 
     # Step 1: Fetch OIDC config
@@ -369,7 +368,6 @@ def validate_pkce_downgrade(
     confidence = 0.0
     validated = False
     evidence.append("FINDING: 'plain' IS advertised in code_challenge_methods_supported")
-    severity = "medium"
 
     # Step 3: Generate PKCE values
     verifier, challenge_plain, challenge_s256 = generate_pkce_pair()

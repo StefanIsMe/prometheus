@@ -72,7 +72,7 @@ _TRANSPORT_ERROR_BASE_DELAY = 3.0  # seconds; backs off 3 → 6 → 12 → 24 �
 _transport_error_retries: dict[str, int] = {}
 
 # Retry for "Prepared model input is empty" — SDK session compaction edge case
-_EMPTY_INPUT_MAX_RETRIES = 2  # noqa: F841  — retained for test compatibility
+_EMPTY_INPUT_MAX_RETRIES = 2  # codeql[py/unused-global-variable] : retained for test compatibility (tests/test_empty_input.py asserts the SDK path doesn't reference it)
 _EMPTY_INPUT_RETRY_DELAY = 2.0  # seconds; backs off 2 → 4
 _empty_input_retries: dict[str, int] = {}
 
@@ -716,8 +716,6 @@ async def run_agent_loop(
             _health_monitor_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await _health_monitor_task
-        # End of run_agent_loop — see CodeQL py/ineffectual-statement
-        # noqa: PLW0127  — blank lines retained for visual separation
 
 
 async def spawn_child_agent(
@@ -1811,7 +1809,7 @@ def _is_tool_output_error_bool(output: Any) -> bool:
 # boolean-returning version under the historic name so the existing
 # test imports keep working. The str-returning version remains primary
 # (call sites that want the kind use it).
-_is_tool_output_error = _is_tool_output_error_bool  # type: ignore[assignment]  # noqa: F841  — kept for tests/test_circuit_breaker.py
+_is_tool_output_error = _is_tool_output_error_bool  # type: ignore[assignment]  # codeql[py/unused-global-variable] : kept as a re-export of the bool-returning shim for tests/test_circuit_breaker.py
 
 
 # Infrastructure-level failures that should NOT trip the consecutive-tool-error

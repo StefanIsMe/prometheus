@@ -47,31 +47,22 @@ def _detect_bugcrowd_target(target: str) -> bool:
     """Check if a target is a Bugcrowd program.
 
     Detection methods:
-    1. Target URL contains bugcrowd.com
+    1. Target URL host is bugcrowd.com or a subdomain of it
     2. Target is registered in the target registry with platform=bugcrowd
     """
     if not target:
         return False
-    # Use proper URL parsing to avoid substring tricks like
-    # "https://evil.com/?u=https://bugcrowd.com" sneaking through.
-    target_lower = target.lower()
-    if "bugcrowd.com" in target_lower:
-        try:
-            from urllib.parse import urlparse
+    from urllib.parse import urlparse
 
-            parsed = urlparse(target if "://" in target else f"https://{target}")
-            host = (parsed.netloc or "").lower()
-            if host == "bugcrowd.com" or host.endswith(".bugcrowd.com"):
-                return True
-        except ValueError:
-            pass
+    parsed = urlparse(target if "://" in target else f"https://{target}")
+    host = (parsed.netloc or "").lower()
+    if host == "bugcrowd.com" or host.endswith(".bugcrowd.com"):
+        return True
     # Check target registry
     try:
         from prometheus.core.target_registry import TargetRegistry
 
         reg = TargetRegistry()
-        from urllib.parse import urlparse
-
         parsed = urlparse(target if "://" in target else f"https://{target}")
         domain = parsed.netloc or parsed.path.split("/")[0]
         for t in reg.list_targets():

@@ -34,7 +34,7 @@ _VALID_CATEGORIES = frozenset(
 
 _DEFAULT_DB_PATH = Path.home() / ".prometheus" / "prometheus.db"
 
-_instance: KnowledgeStore | None = None
+_instance: KnowledgeStore | None = None  # codeql[py/unused-global-variable] : read via `global` inside KnowledgeStore.__new__
 _instance_lock = threading.Lock()
 
 
@@ -1077,7 +1077,7 @@ class KnowledgeStore:
             now = datetime.now(UTC).isoformat()
             if rs:
                 # Update existing row's external_* fields + status sentinel
-                _sentinel = "external_" + ext_dict["status"]  # noqa: F841  — kept for downstream readers of report_status
+                _sentinel = "external_" + ext_dict["status"]  # codeql[py/unused-local-variable] : mirrors the external_<status> token written to report_status for downstream readers
                 summary = (
                     f"[{now[:19]}] External {platform}/{external_id} closed as "
                     f"{ext_dict['status']} by {ext_dict.get('triager') or 'unknown'}: "

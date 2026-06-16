@@ -195,7 +195,7 @@ def test_known_provider_set_covers_all_advertised_providers():
 if __name__ == "__main__":
     import pytest
 
-    _mp = pytest.MonkeyPatch()
+    _mp = pytest.MonkeyPatch()  # codeql[py/unused-global-variable] : monkeypatch fixture lives in module scope so pytest can introspect it
 
     class _NullCaplog:
         def __init__(self) -> None:

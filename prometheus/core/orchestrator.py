@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 ScanStatus = str  # "starting", "running", "completed", "failed", "stopped"
 
-_instance: ScanOrchestrator | None = None
+_instance: ScanOrchestrator | None = None  # codeql[py/unused-global-variable] : read via `global` inside ScanOrchestrator.__new__
 _instance_lock = threading.Lock()
 
 

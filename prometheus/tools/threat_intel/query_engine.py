@@ -16,13 +16,12 @@ import time
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from prometheus.tools.threat_intel.local_db import ThreatIntelDB
     from prometheus.tools.threat_intel.tool import (
         _ECOSYSTEM_MAP,
         _get_github_token,
         _guess_ecosystem,
     )
-
-from prometheus.tools.threat_intel.local_db import ThreatIntelDB
 
 
 logger = logging.getLogger(__name__)
