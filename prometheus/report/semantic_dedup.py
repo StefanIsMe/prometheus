@@ -3,7 +3,7 @@
 Extends the existing deterministic dedup in
 :mod:`prometheus.report.dedupe` with an embedding-similarity pass.
 Falls back gracefully when no embedding model is available
-(:func:`_get_embedder` returns ``None``).
+(:func:`_get_embedder` returns the hash-based stub).
 
 Two findings are considered duplicates when their cosine similarity
 is ``>= threshold`` (default 0.85). The dedup is a *secondary* pass;
@@ -15,12 +15,16 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any
+from collections.abc import Callable, Iterable, Sequence
 
 logger = logging.getLogger(__name__)
 
 
 DEFAULT_THRESHOLD = 0.85
+
+# An embedder takes a batch of strings and returns one vector per input.
+Embedder = Callable[[list[str]], list[list[float]]]
 
 
 def _stringify(finding: dict[str, Any]) -> str:
@@ -35,8 +39,8 @@ def _stringify(finding: dict[str, Any]) -> str:
 # ----------------------------------------------------------------------
 # Embedder resolution
 # ----------------------------------------------------------------------
-def _get_embedder() -> Callable[[str], list[float]] | None:
-    """Return a callable ``text -> list[float]`` or ``None`` if unavailable.
+def _get_embedder() -> Embedder:
+    """Return a callable ``texts -> list[list[float]]``.
 
     Tries the configured Hermes provider first; falls back to a
     deterministic hash-based stub so dedup is always defined.
