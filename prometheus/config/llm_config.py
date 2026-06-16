@@ -697,8 +697,46 @@ def should_set_tool_choice(provider_name: str, supports_thinking: bool) -> bool:
 # ---------------------------------------------------------------------------
 
 
+# API key env vars that should be authoritative from .env (not shell overrides).
+# These are common in shell rc files (e.g. OPENROUTER_API_KEY from openrouter-fusion
+# bashrc) where stale or rotated keys can shadow the working .env value and break
+# scans with a 401 "User not found" that looks like a config bug.
+_LLM_KEY_ENV_VARS: frozenset[str] = frozenset(
+    {
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "TOKENROUTER_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GROQ_API_KEY",
+        "XAI_API_KEY",
+        "TOGETHER_API_KEY",
+        "FIREWORKS_API_KEY",
+        "DEEPINFRA_API_KEY",
+        "CEREBRAS_API_KEY",
+        "GEMINI_API_KEY",
+        "NOVITA_API_KEY",
+        "AZURE_OPENAI_API_KEY",
+        "NOUS_API_KEY",
+    }
+)
+
+
 def _load_dotenv(path: Path) -> None:
-    """Load a .env file into os.environ, skipping already-set vars."""
+    """Load a .env file into os.environ.
+
+    Behavior:
+      - LLM API keys (OPENAI_API_KEY, OPENROUTER_API_KEY, ...) are ALWAYS
+        overridden by .env values, even when the shell already has a value.
+        Shell rc files often export stale or rotated keys (e.g. an OpenRouter
+        Fusion key) that would otherwise shadow the working .env value and
+        cause 401 "User not found" errors.
+      - All other vars use the standard "skip if already set" behavior so
+        user shell exports still win by default.
+
+    Skips the literal placeholder "***" so accidentally-committed masked
+    values don't overwrite working env vars.
+    """
     if not path.is_file():
         return
     try:
@@ -708,9 +746,24 @@ def _load_dotenv(path: Path) -> None:
                 continue
             key, _, value = line.partition("=")
             key = key.strip()
-            if key and key not in os.environ:
-                val = value.strip().strip('"').strip("'")
-                if val and val != "***":
+            if not key:
+                continue
+            val = value.strip().strip('"').strip("'")
+            if not val or val == "***":
+                continue
+            # LLM keys: .env is authoritative.
+            if key in _LLM_KEY_ENV_VARS:
+                if key in os.environ and os.environ[key] != val:
+                    logger.warning(
+                        "Overriding shell %s with .env value (shell value was %d chars, "
+                        "may be a stale or rotated key).",
+                        key,
+                        len(os.environ[key]),
+                    )
+                os.environ[key] = val
+            else:
+                # Non-LLM vars: respect existing shell exports.
+                if key not in os.environ:
                     os.environ[key] = val
     except Exception:
         logger.debug("failed to load env vars, ignoring", exc_info=True)
