@@ -262,7 +262,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Lazy imports inside functions to avoid circular dependency with
-# prometheus.telemetry / prometheus.report.dedupe / cvss.
+# prometheus.report.dedupe / cvss.
 "prometheus/tools/notes/tools.py" = ["PLC0415", "TC002"]
 "prometheus/tools/finish/tool.py" = ["PLC0415", "TC002"]
 "prometheus/tools/reporting/tool.py" = ["PLC0415", "TC002"]

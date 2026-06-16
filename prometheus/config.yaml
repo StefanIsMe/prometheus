@@ -80,7 +80,6 @@ rate_limits:
 
 # Prometheus-specific Settings
 prometheus:
-  telemetry: false
   reasoning_effort: "xhigh"
   max_concurrent_scans: 4
   auto_scans_enabled: false

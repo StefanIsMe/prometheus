@@ -53,7 +53,6 @@ from prometheus.interface.utils import (
     generate_run_name,
     image_exists,
     infer_target_type,
-    is_whitebox_scan,
     process_pull_line,
     resolve_diff_scope_context,
     rewrite_localhost_targets,
@@ -61,8 +60,7 @@ from prometheus.interface.utils import (
 )
 from prometheus.report.state import get_global_report_state
 from prometheus.report.writer import read_run_record, write_run_record
-from prometheus.telemetry import posthog, scarf
-from prometheus.telemetry.logging import configure_dependency_logging
+from prometheus.utils.logging import configure_dependency_logging
 
 
 HOST_GATEWAY_HOSTNAME = "host.docker.internal"
@@ -1129,15 +1127,6 @@ def main() -> None:
     # mode or inside run_cli() for non-interactive mode — both call
     # run_browser_prescan as the first step before the Docker sandbox scan.
 
-    _telemetry_start_kwargs = {
-        "model": load_settings().llm.model,
-        "is_whitebox": is_whitebox_scan(args.targets_info),
-        "interactive": not args.non_interactive,
-        "has_instructions": bool(args.instruction),
-    }
-    posthog.start(**_telemetry_start_kwargs)
-    scarf.start(**_telemetry_start_kwargs)
-
     exit_reason = "user_exit"
     try:
         if args.non_interactive:
@@ -1148,8 +1137,6 @@ def main() -> None:
         exit_reason = "interrupted"
     except Exception as e:
         exit_reason = "error"
-        posthog.error("unhandled_exception", str(e))
-        scarf.error("unhandled_exception", str(e))
         raise
     finally:
         report_state = get_global_report_state()
@@ -1159,8 +1146,6 @@ def main() -> None:
                 "stopped",
             )
             report_state.cleanup(status=status)
-            posthog.end(report_state, exit_reason=exit_reason)
-            scarf.end(report_state, exit_reason=exit_reason)
 
     results_path = run_dir_for(args.run_name)
     display_completion_message(args, results_path)

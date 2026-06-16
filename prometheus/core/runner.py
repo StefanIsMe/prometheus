@@ -45,7 +45,7 @@ from prometheus.core.context_manager import (
     create_context_managed_session,
 )
 from prometheus.runtime import session_manager
-from prometheus.telemetry.logging import set_scan_id, setup_scan_logging
+from prometheus.utils.logging import set_scan_id, setup_scan_logging
 from prometheus.tools.threat_intel.tool import clear_scan_cache
 
 
