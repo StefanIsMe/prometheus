@@ -18,10 +18,8 @@ from agents import RunContextWrapper, function_tool
 
 from prometheus.core.deep_audit import (
     DifferentialResult,
-    analyze_rate_limit,
     build_auth_flow_trace_script,
     build_deep_audit_plan,
-    fingerprint_response,
     generate_bugcrowd_report,
     generate_poc_script,
 )

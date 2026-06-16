@@ -15,7 +15,7 @@ import logging
 import threading
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any, Self
+from typing import Any
 
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ class ScanScheduler:
     scheduler per process.
     """
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+    def __new__(cls, *args: Any, **kwargs: Any) -> "ScanScheduler":
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance

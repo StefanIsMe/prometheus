@@ -341,55 +341,6 @@ def _execute_curl_command(command: str, timeout: int = 30) -> tuple[bool, str, s
         return False, "", str(e)
 
 
-def _analyze_curl_output(
-    success: bool,
-    stdout: str,
-    stderr: str,
-    expected_patterns: list[str],
-) -> tuple[bool, str]:
-    """Analyze curl output to determine if exploitation was successful.
-
-    Args:
-        success: Whether curl command succeeded
-        stdout: Standard output from curl
-        stderr: Standard error from curl
-        expected_patterns: Regex patterns that indicate successful exploitation
-
-    Returns:
-        Tuple of (exploited, evidence)
-    """
-    if not success:
-        return False, f"Command failed: {stderr}"
-
-    output = stdout + stderr
-
-    # Check for expected exploitation patterns
-    for pattern in expected_patterns:
-        if re.search(pattern, output, re.IGNORECASE):
-            return True, f"Exploitation confirmed: pattern '{pattern}' found in output"
-
-    # Check for error patterns that indicate exploitation failed
-    error_patterns = [
-        r"403\s*forbidden",
-        r"401\s*unauthorized",
-        r"404\s*not\s*found",
-        r"access\s*denied",
-        r"permission\s*denied",
-        r"invalid\s*(?:token|key|credential)",
-        r"authentication\s*failed",
-    ]
-
-    for pattern in error_patterns:
-        if re.search(pattern, output, re.IGNORECASE):
-            return False, f"Exploitation failed: {pattern} in response"
-
-    # If we have output but no clear exploitation signal, it's ambiguous
-    if output.strip():
-        return False, f"Ambiguous output (length={len(output)}): no clear exploitation signal"
-
-    return False, "Empty output"
-
-
 def validate_poc_execution(
     finding: dict[str, Any],
     execute_poc: bool = False,

@@ -13,7 +13,7 @@ import logging
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ class AutoReporter:
     instance per process.
     """
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+    def __new__(cls, *args: Any, **kwargs: Any) -> "AutoReporter":
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterable
@@ -157,11 +157,6 @@ def _fmt_duration(s: float) -> str:
         return f"{int(m)}m{int(s):02d}s"
     h, m = divmod(m, 60)
     return f"{int(h)}h{int(m):02d}m"
-
-
-def _last_vuln_titles(r: XBOWResult) -> list[str]:
-    """Best-effort: parse the ``notes`` field if it has a list."""
-    return []
 
 
 __all__ = [

@@ -45,8 +45,9 @@ class ProposedChain:
 def _finding_ids(findings: Iterable[dict[str, Any]]) -> list[str]:
     out: list[str] = []
     for f in findings:
-        if not isinstance(f, dict):
-            continue
+        # `findings` is typed as `Iterable[dict[str, Any]]`; the
+        # isinstance check is a runtime guard for callers passing
+        # other shapes (e.g. dataclass instances).
         fid = f.get("id") or f.get("candidate_id") or f.get("title")
         if isinstance(fid, str):
             out.append(fid)
@@ -55,12 +56,12 @@ def _finding_ids(findings: Iterable[dict[str, Any]]) -> list[str]:
 
 def _link_coverage(findings: list[dict[str, Any]], chain: Chain) -> dict[str, list[str]]:
     """For each required link, list the finding ids that cover it."""
-    from prometheus.core.conditionally_valid import _has_link, _finding_text
+    from prometheus.core.conditionally_valid import _has_link
 
     coverage: dict[str, list[str]] = {link: [] for link in chain.links_required}
     for f in findings:
-        if not isinstance(f, dict):
-            continue
+        # `findings` is typed as `list[dict[str, Any]]`; the isinstance
+        # check is a runtime guard for callers passing other shapes.
         fid = f.get("id") or f.get("title") or "?"
         for link in chain.links_required:
             if _has_link(f, link):
@@ -78,7 +79,7 @@ def find_chain_links_in_engagement(
     by the finding texts. The 1-link gap is the linker asking the
     human to fill in the missing piece.
     """
-    findings = [f for f in findings if isinstance(f, dict)]
+    findings = list(findings)
     if not findings:
         return []
     proposed: list[ProposedChain] = []

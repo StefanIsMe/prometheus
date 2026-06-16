@@ -426,6 +426,7 @@ async def run_prometheus_scan(
 
     # --- ALWAYS update nuclei templates before agents start ---
     session = bundle.get("session")
+    assert session is not None, "sandbox bundle missing 'session'"
     _pre_scan_technologies: dict[str, str] = {}
     _wpscan_results: dict[str, dict[str, Any]] = {}
 
@@ -960,7 +961,7 @@ RESCAN MODE — EFFICIENCY DIRECTIVES:
         return result
     except BaseException:
         logger.exception("prometheus scan %s failed", scan_id)
-        if root_id is not None:
+        if root_id is not None:  # type: ignore[redundant-expr]
             await coordinator.cancel_descendants(root_id)
             with contextlib.suppress(Exception):
                 await coordinator.set_status(root_id, "failed")

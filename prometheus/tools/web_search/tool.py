@@ -18,7 +18,7 @@ _ddgs_lock = threading.Lock()
 _ddgs = None
 
 
-def _get_ddgs():
+def _get_ddgs() -> Any:
     global _ddgs
     if _ddgs is not None:
         return _ddgs

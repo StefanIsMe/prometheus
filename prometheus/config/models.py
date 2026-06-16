@@ -47,11 +47,6 @@ DEFAULT_MODEL_RETRY = ModelRetrySettings(
 _current_resolution: ResolvedModel | None = None
 
 
-def _patch_httpx_no_zstd() -> None:
-    """Avoid advertising zstd to OpenAI-compatible gateways."""
-    os.environ.setdefault("OPENAI_DISABLE_ZSTD", "1")
-
-
 def configure_sdk_model_defaults(
     settings: Settings | None = None,
 ) -> ResolvedModel:

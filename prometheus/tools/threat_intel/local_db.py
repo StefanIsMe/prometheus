@@ -113,7 +113,7 @@ class ThreatIntelDB:
         has_exploit: bool = False,
         published_at: str = "",
         sources: list[str] | None = None,
-        raw_data: dict | None = None,
+        raw_data: dict[str, Any] | None = None,
     ) -> None:
         """Insert or update a CVE entry. Merges sources if row exists."""
         now = datetime.now(UTC).isoformat()

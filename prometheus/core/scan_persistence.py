@@ -13,7 +13,7 @@ import sqlite3
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class ScanPersistence:
     connection per process.
     """
 
-    def __new__(cls, db_path: Path | str | None = None) -> Self:
+    def __new__(cls, db_path: Path | str | None = None) -> "ScanPersistence":
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance

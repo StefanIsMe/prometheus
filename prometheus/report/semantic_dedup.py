@@ -15,19 +15,12 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 logger = logging.getLogger(__name__)
 
 
 DEFAULT_THRESHOLD = 0.85
-
-
-@dataclass
-class _CachedEmbeddings:
-    text: str
-    vec: list[float]
 
 
 def _stringify(finding: dict[str, Any]) -> str:
@@ -42,17 +35,15 @@ def _stringify(finding: dict[str, Any]) -> str:
 # ----------------------------------------------------------------------
 # Embedder resolution
 # ----------------------------------------------------------------------
-def _get_embedder():
+def _get_embedder() -> Callable[[str], list[float]] | None:
     """Return a callable ``text -> list[float]`` or ``None`` if unavailable.
 
     Tries the configured Hermes provider first; falls back to a
     deterministic hash-based stub so dedup is always defined.
     """
     try:
-        from prometheus.config.hermes_bridge import resolve_active_hermes_model
         from prometheus.config.llm_config import resolve_model, get_config  # type: ignore
 
-        _ = resolve_active_hermes_model()  # warm the bridge
         _ = get_config()
     except Exception:
         logger.debug("embedder warmup failed, falling back to hash embedder", exc_info=True)
@@ -132,7 +123,7 @@ def semantic_dedup(
     cluster is kept; later ones are dropped. Cluster members are
     attached to the kept finding's ``merged_from`` list.
     """
-    items = [f for f in findings if isinstance(f, dict)]
+    items = list(findings)
     if not items:
         return [], []
 

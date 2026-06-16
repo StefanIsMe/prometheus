@@ -139,7 +139,7 @@ def emit_sarif(
     """
     start = invocation_start or _dt.datetime.now(_dt.UTC).isoformat()
     end = invocation_end or _dt.datetime.now(_dt.UTC).isoformat()
-    results: list[SarifResult] = [finding_to_result(f) for f in findings if isinstance(f, dict)]
+    results: list[SarifResult] = [finding_to_result(f) for f in findings]
     rule_ids = sorted({r.rule_id for r in results})
     rules = [
         {

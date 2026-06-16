@@ -974,7 +974,9 @@ class FindingsLibraryPanel(VerticalScroll):
         )
 
         # Add selected class to new
+        findings_scroll = None
         try:
+            findings_scroll = self.query_one("#findings_list", VerticalScroll)
             children = list(findings_scroll.children)
             if 0 <= self._selected_index < len(children):
                 children[self._selected_index].add_class("selected")
@@ -1042,7 +1044,7 @@ class FindingsLibraryPanel(VerticalScroll):
             lines.append("")
 
             # Group by severity
-            by_severity: dict[str, list] = {}
+            by_severity: dict[str, list[dict[str, Any]]] = {}
             for f in self._filtered_findings:
                 sev = (f.get("severity") or "info").lower()
                 by_severity.setdefault(sev, []).append(f)

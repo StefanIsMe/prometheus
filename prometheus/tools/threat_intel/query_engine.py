@@ -55,8 +55,6 @@ def slugify_tech(tech: str) -> str:
     """
     if not tech:
         return ""
-    if not isinstance(tech, str):
-        tech = str(tech)
     # 1. CVE id?
     m = _CVE_PATTERN.search(tech)
     if m:

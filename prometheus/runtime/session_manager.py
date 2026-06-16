@@ -262,6 +262,8 @@ async def create_or_reuse(
                     f"Is Docker running? Check 'docker info' and 'docker ps'."
                 ) from _last_exc
 
+    if session is None:
+        raise RuntimeError("Failed to create Docker sandbox: session is None")
     try:
         caido_endpoint = await session.resolve_exposed_port(_CONTAINER_CAIDO_PORT)
     except Exception as exc:

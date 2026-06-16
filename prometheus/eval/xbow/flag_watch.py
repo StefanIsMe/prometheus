@@ -64,7 +64,7 @@ class FlagWatchResult:
     challenge_reachable: bool = False
     container_flag_visible: str = ""
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, str]:
         return {
             "flag": self.flag,
             "passed": self.passed,

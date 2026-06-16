@@ -1262,7 +1262,7 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         text = Text()
 
         # Header
-        target_names = [t.get("original", "?") for t in self.scan_config.get("targets", [])]
+        target_names = [t.get("original", "?") for t in (self.scan_config.get("targets") or [])]
         targets_str = ", ".join(target_names) if target_names else "starting"
         text.append(f"Starting deep scan of ", style="dim")
         text.append(targets_str, style="bold white")
@@ -1691,7 +1691,9 @@ class prometheusTUIApp(App):  # type: ignore[misc]
                                     rewrite_localhost_targets,
                                 )
 
-                                original = self.scan_config["targets"][0]["original"]
+                                original = (self.scan_config.get("targets") or [{}])[0].get(
+                                    "original", ""
+                                )
                                 _post_progress(
                                     f"Expanded scan targets: {original} -> {len(prescan_targets)} asset(s)"
                                 )

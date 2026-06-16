@@ -73,7 +73,7 @@ CATEGORIES: list[dict] = [
     {
         "name": "Stream event sink failed (multi-line spam)",
         "patterns": ["stream event sink failed"],
-        "fix_test": "tests/test_event_sink_circuit.py",
+        "fix_test": "tests/test_safe_exec_shutdown.py",  # the sink-dead path is exercised in the safe_exec test
     },
     {
         "name": "Executor shutdown RuntimeError",

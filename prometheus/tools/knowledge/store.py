@@ -15,7 +15,7 @@ import sqlite3
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ class KnowledgeStore:
     guarantees one connection per process.
     """
 
-    def __new__(cls, db_path: Path | str | None = None) -> Self:
+    def __new__(cls, db_path: Path | str | None = None) -> "KnowledgeStore":
         global _instance  # noqa: PLW0603
         requested_path = Path(db_path) if db_path else _DEFAULT_DB_PATH
         if (
@@ -619,7 +619,7 @@ class KnowledgeStore:
             ).fetchall()
 
         # Group knowledge by category
-        knowledge_by_cat: dict[str, list[dict]] = {}
+        knowledge_by_cat: dict[str, list[dict[str, Any]]] = {}
         for row in [dict(r) for r in knowledge]:
             cat = row["category"]
             knowledge_by_cat.setdefault(cat, []).append(row)

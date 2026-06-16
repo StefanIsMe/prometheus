@@ -916,7 +916,7 @@ async def _do_create(  # noqa: PLR0912
                 "Describe what you actually DID, not what could theoretically be done."
             )
 
-    if not isinstance(cvss_breakdown, dict) or not cvss_breakdown:
+    if not cvss_breakdown:
         errors.append(
             "REJECTED: cvss_breakdown must be a JSON object with all 8 CVSS v3.1 metrics. "
             'Example: {"attack_vector":"N","attack_complexity":"L","privileges_required":"N",'
@@ -1182,6 +1182,7 @@ async def _do_create(  # noqa: PLR0912
         existing_vuln_id: int | None = None
         dedup_layer: str | None = None
         dedup_match: dict[str, Any] | None = None
+        domain: str = ""
         try:
             from prometheus.tools.knowledge.store import KnowledgeStore
 
@@ -1220,7 +1221,7 @@ async def _do_create(  # noqa: PLR0912
             and dedup_match.get("finding") is None
             and dedup_match.get("external") is not None
         )
-        if external_only_dedup and existing_vuln_id is None:
+        if external_only_dedup and existing_vuln_id is None and dedup_match is not None:
             try:
                 from prometheus.tools.knowledge.store import KnowledgeStore
 

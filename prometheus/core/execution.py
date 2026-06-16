@@ -105,11 +105,6 @@ def _mark_sink_dead(agent_id: str) -> None:
     _sink_dead.add(agent_id)
 
 
-def _reset_event_sink_health(agent_id: str) -> None:
-    """Reset the per-agent sink health (e.g. on a new scan / agent)."""
-    _sink_dead.discard(agent_id)
-
-
 # --- Fix 5: stream stall watchdog ---
 # If no stream event arrives within this many seconds, the LLM connection is
 # considered dead (CLOSE-WAIT / half-open).  The timeout resets on every event.
@@ -644,7 +639,7 @@ async def run_agent_loop(
     result: RunResultBase | None = None
 
     # --- Fix 7: start health monitor for root agent (monitors all children) ---
-    _health_monitor_task: asyncio.Task | None = None
+    _health_monitor_task: asyncio.Task[None] | None = None
     if context.get("parent_id") is None:
         _health_monitor_task = asyncio.create_task(
             _monitor_agent_health(coordinator, context),
@@ -1155,8 +1150,6 @@ def _check_consecutive_tool_errors(
         # via the bool-returning shim; we need the str kind here to
         # distinguish logical / gate / None.
         kind = _is_tool_output_error_kind(output)
-        if isinstance(kind, bool):  # pragma: no cover — defensive
-            kind = "logical" if kind else None
         is_gate = kind == "gate"
         is_infra = _is_infrastructure_error(output) if not is_gate else False
         is_logical_error = kind == "logical" and not is_infra
@@ -1648,17 +1641,6 @@ def _infer_model_from_raw(raw: Any) -> str:
         v = getattr(response, "model", None)
         if isinstance(v, str) and v:
             return v[-30:]
-    return ""
-
-
-def _model_kind(model_id: str) -> str:
-    """Map a model_id to a short kind label like 'mimo' or 'deepseek-r1'."""
-    if not model_id:
-        return ""
-    lc = model_id.lower()
-    for needle, kind in _MODEL_KIND_HINTS:
-        if needle in lc:
-            return kind
     return ""
 
 

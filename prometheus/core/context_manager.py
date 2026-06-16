@@ -65,7 +65,7 @@ def truncate_tool_output(output: str, tool_name: str = "") -> tuple[str, str | N
     Returns (truncated_output, overflow_key).
     If overflow_key is not None, the full output was stored externally.
     """
-    if not output or not isinstance(output, str):
+    if not output:
         return output, None
 
     original_size = len(output.encode("utf-8"))
@@ -130,7 +130,7 @@ def mask_old_tool_output(output: str, age_turns: int) -> str:
     if age_turns <= MASK_AFTER_TURNS:
         return output
 
-    if not output or not isinstance(output, str):
+    if not output:
         return output
 
     # Don't mask if it's already a stub
@@ -148,7 +148,7 @@ def summarize_child_result(output: str, agent_name: str = "") -> str:
     For Phase 2: Only pass structured JSON results to parent,
     not the full conversation history.
     """
-    if not output or not isinstance(output, str):
+    if not output:
         return output
 
     # Try to parse as JSON

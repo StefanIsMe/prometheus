@@ -120,7 +120,7 @@ def _derive_email(handle: str, platform: str) -> str:
     return f"{handle}@example.com"
 
 
-def _lightweight_scan(url: str, findings: list) -> None:
+def _lightweight_scan(url: str, findings: list[dict[str, Any]]) -> None:
     """Quick HTTP-level checks for non-browser targets (streams, APIs, docs).
 
     Tests:

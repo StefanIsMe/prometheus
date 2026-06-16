@@ -219,7 +219,7 @@ async def _run_one(
     container_id = ""
     error = ""
     watch_result: FlagWatchResult | None = None
-    prom_proc: subprocess.CompletedProcess | None = None
+    prom_proc: subprocess.CompletedProcess[str] | None = None
 
     # 1. Scaffold the engagement folder so the agent has scope.
     try:
