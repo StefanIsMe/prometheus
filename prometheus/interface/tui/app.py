@@ -35,7 +35,7 @@ from prometheus.config import load_settings
 from prometheus.core.runner import run_prometheus_scan
 from prometheus.interface.tui.automation_panels import AutomatedScansPanel, ProgramsPanel
 from prometheus.interface.tui.findings_library import (
-    FindingsLibraryPanel,
+    FindingsLibraryPanel,  # codeql[py/unsafe-cyclic-import] : suppressed via the security dashboard triage
 )  # codeql[py/unsafe-cyclic-import] : findings_library only imports app.prometheusTUIApp inside TYPE_CHECKING, so no runtime cycle
 from prometheus.interface.tui.live_view import TuiLiveView
 from prometheus.interface.tui.messages import send_user_message_to_agent
@@ -190,7 +190,9 @@ class SplashScreen(Static):  # type: ignore[misc]
         return Panel.fit(Group(*content_parts), border_style=self.PRIMARY_GREEN, padding=(1, 6))
 
     def _build_url_text(self) -> Text:
-        return Text("Prometheus.ai", style=Style(color=self.PRIMARY_GREEN, bold=True))
+        return Text(
+            "github.com/StefanIsMe/Prometheus", style=Style(color=self.PRIMARY_GREEN, bold=True)
+        )
 
     def _build_welcome_text(self) -> Text:
         text = Text("Welcome to ", style=Style(color="white", bold=True))
