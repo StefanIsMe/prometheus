@@ -644,9 +644,15 @@ def apply_model_to_sdk(resolved: ResolvedModel) -> None:
     os.environ["LLM_API_BASE"] = resolved.base_url
     os.environ["OPENAI_API_KEY"] = resolved.api_key
 
-    # Extra headers for the provider (e.g., X-HackerOne-Handle for Nous)
+    # Extra headers for the provider (e.g., HTTP-Referer/X-Title for
+    # OpenRouter app attribution). Note: neither the openai SDK 2.x nor
+    # the openai-agents SDK 0.14.x auto-reads the OPENAI_EXTRA_HEADERS
+    # env var — the actual mechanism is ModelSettings.extra_headers
+    # (per-request), wired in prometheus/core/inputs.py:make_model_settings
+    # and the direct-stream call sites in interface/main.py (warmup) and
+    # report/dedupe.py. The env-var line below is kept in case a
+    # non-Agents consumer ever picks it up.
     if resolved.extra_headers:
-        # The SDK reads HTTP headers from OPENAI_EXTRA_HEADERS as JSON
         import json
 
         os.environ["OPENAI_EXTRA_HEADERS"] = json.dumps(resolved.extra_headers)
