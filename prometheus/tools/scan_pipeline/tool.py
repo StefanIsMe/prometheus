@@ -45,7 +45,6 @@ async def run_scan_pipeline(
         open ports, directory enumeration results, nuclei findings,
         and WAF detection.
     """
-    import asyncio
     import os
 
     tor_proxy_set = "PROMETHEUS_TOR_PROXY" in os.environ

@@ -14,7 +14,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any  # noqa: F401
 
 from prometheus.config import load_settings
 from prometheus.core.agents import AgentCoordinator
@@ -33,7 +33,9 @@ logger = logging.getLogger(__name__)
 
 ScanStatus = str  # "starting", "running", "completed", "failed", "stopped"
 
-_instance: ScanOrchestrator | None = None
+_instance: ScanOrchestrator | None = (
+    None  # codeql[py/unused-global-variable] : read via `global` inside ScanOrchestrator.__new__
+)
 _instance_lock = threading.Lock()
 
 
@@ -63,7 +65,7 @@ class ScanOrchestrator:
     orchestrator per process.
     """
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+    def __new__(cls, *args: Any, **kwargs: Any) -> "ScanOrchestrator":
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance

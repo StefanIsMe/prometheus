@@ -9,7 +9,6 @@ Drop findings whose vote count is below ``vote_threshold``. Keep
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
@@ -85,8 +84,8 @@ def consolidate_votes(
     for run_idx, findings in enumerate(run_results):
         seen_keys_in_run: set[tuple[str, str, str, str]] = set()
         for f in findings:
-            if not isinstance(f, dict):
-                continue
+            # `findings` is typed as `list[dict[str, Any]]`; isinstance
+            # is a runtime guard for callers passing other shapes.
             key = _finding_key(f)
             entry = grouped.get(key)
             if entry is None:

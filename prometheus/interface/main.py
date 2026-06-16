@@ -5,17 +5,16 @@ prometheus Agent Interface
 
 # Apply httpx zstd patch BEFORE any imports that trigger LiteLLM
 # (OpenGateway sends zstd-compressed bodies that httpx can't decompress)
-from prometheus.config.models import _patch_httpx_no_zstd
+import os
 
+os.environ.setdefault("OPENAI_DISABLE_ZSTD", "1")
 
-_patch_httpx_no_zstd()
 
 import argparse
 import asyncio
 import atexit
 import contextlib
 import logging
-import os
 import shutil
 import sys
 import threading
@@ -71,8 +70,8 @@ logger = logging.getLogger(__name__)
 def validate_environment() -> None:
     logger.info("Validating environment")
     console = Console()
-    missing_required_vars = []
-    missing_optional_vars = []
+    missing_required_vars: list[str] = []
+    missing_optional_vars: list[str] = []
 
     settings = load_settings()
     resolution = configure_sdk_model_defaults(settings)
@@ -538,7 +537,9 @@ def _load_resume_state(args: argparse.Namespace, parser: argparse.ArgumentParser
     """Populate ``args.targets_info`` and friends from a prior run's run.json."""
     run_dir = run_dir_for(args.resume)
     state_path = run_dir / "run.json"
-    state: dict = {}  # codeql[py/uninitialized-local-variable] : initialized to a safe default before the read_run_record() call below
+    state: dict[
+        str, Any
+    ] = {}  # codeql[py/uninitialized-local-variable] : initialized to a safe default before the read_run_record() call below
     if not state_path.exists():
         parser.error(
             f"--resume {args.resume}: no such run "
@@ -786,7 +787,6 @@ def main() -> None:
         # above.
         rc = xbow_main(sys.argv[2:])
         sys.exit(rc)
-        return
 
     # Dispatch `prometheus realvuln` to the RealVuln-Benchmark harness.
     # Subcommands: list, run, report, score.
@@ -794,7 +794,6 @@ def main() -> None:
         from prometheus.eval.realvuln.runner import main as realvuln_main
 
         sys.exit(realvuln_main(sys.argv[2:]))
-        return
 
     args = parse_arguments()
 
@@ -903,7 +902,7 @@ def main() -> None:
 
         _shutdown_requested = threading.Event()
 
-        def _signal_handler(signum, _frame):
+        def _signal_handler(signum: int, _frame: Any) -> None:
             if not _shutdown_requested.is_set():
                 _shutdown_requested.set()
                 console.print("\n[yellow]Shutdown requested. Stopping scans...[/]")
@@ -916,7 +915,7 @@ def main() -> None:
         _prev_sigterm = _signal.signal(_signal.SIGTERM, _signal_handler)
 
         # Cleanup on exit: stop scans + orphan container cleanup
-        def _cleanup():
+        def _cleanup() -> None:
             orchestrator.shutdown_all()
             # Kill any orphaned prometheus sandbox containers
             try:

@@ -64,7 +64,7 @@ def _save_evidence(
         else "",
         "idor_confirmed": account_a_resp != account_b_swapped_resp
         and account_b_swapped_resp is not None
-        and len(account_b_swapped_resp or "") > 10,
+        and len(account_b_swapped_resp) > 10,
     }
     path = EVIDENCE_DIR / f"{finding_id}.json"
     path.write_text(json.dumps(evidence, indent=2))
@@ -445,7 +445,7 @@ async def run_idor_scan(
 # ---------------------------------------------------------------------------
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Prometheus IDOR Scanner — automated IDOR detection via browser",
     )

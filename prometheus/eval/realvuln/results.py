@@ -117,7 +117,8 @@ def write_report(
 
     if not rows:
         lines.append("No results in this run.")
-        return dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return dest
 
     # Summary.
     scored = [r for r in rows if r.prom_ran and not r.error]

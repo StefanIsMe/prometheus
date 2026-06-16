@@ -14,14 +14,16 @@ import sqlite3
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_DB_PATH = Path.home() / ".prometheus" / "prometheus.db"
 
-_instance: CVEWatcher | None = None
+_instance: CVEWatcher | None = (
+    None  # codeql[py/unused-global-variable] : read via `global` inside CVEWatcher.__new__
+)
 _instance_lock = threading.Lock()
 
 
@@ -41,7 +43,7 @@ class CVEWatcher:
 
     CHECK_INTERVAL = 1800  # 30 minutes in seconds
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+    def __new__(cls, *args: Any, **kwargs: Any) -> "CVEWatcher":
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance

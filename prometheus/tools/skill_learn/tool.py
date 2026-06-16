@@ -169,12 +169,11 @@ def _suggest_skill_update_impl(
         suggestions: list[dict[str, Any]] = []
         if _SUGGESTIONS_PATH.exists():
             try:
-                suggestions = json.loads(_SUGGESTIONS_PATH.read_text(encoding="utf-8"))
-                if not isinstance(suggestions, list):
-                    suggestions = []
+                raw: object = json.loads(_SUGGESTIONS_PATH.read_text(encoding="utf-8"))
+                if isinstance(raw, list):
+                    suggestions = [s for s in raw if isinstance(s, dict)]
             except (json.JSONDecodeError, OSError):
                 logger.debug("Failed to read skill suggestions file; starting fresh", exc_info=True)
-                suggestions = []
         suggestions.append(entry)
         _SUGGESTIONS_PATH.write_text(
             json.dumps(suggestions, ensure_ascii=False, indent=2),

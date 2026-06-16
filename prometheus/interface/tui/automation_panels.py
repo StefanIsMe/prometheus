@@ -57,13 +57,6 @@ def _load_programs() -> list[dict[str, Any]]:
         return []
 
 
-def _save_programs(programs: list[dict[str, Any]]) -> None:
-    """Save programs to the JSON file."""
-    PROGRAMS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with PROGRAMS_FILE.open("w", encoding="utf-8") as f:
-        json.dump(programs, f, indent=2, ensure_ascii=False)
-
-
 class ProgramsPanel(VerticalScroll):
     """Bug bounty program tracker with automated scan configuration.
 
@@ -664,7 +657,7 @@ class AutomatedScansPanel(VerticalScroll):
         if btn_id == "auto_refresh_btn":
             self._refresh_scans()
 
-    def on_click(self, event) -> None:
+    def on_click(self, event: Any) -> None:
         """Handle clicks on scan list items."""
         widget = event.widget
         if widget is not None and widget.id and widget.id.startswith("scan_item_"):
@@ -673,7 +666,7 @@ class AutomatedScansPanel(VerticalScroll):
             self._show_scan_detail(scan_id)
             self._refresh_scans()
 
-    def on_focus(self, event) -> None:
+    def on_focus(self, event: Any) -> None:
         """Handle keyboard focus on scan list items."""
         widget = event.control
         if widget is not None and widget.id and widget.id.startswith("scan_item_"):

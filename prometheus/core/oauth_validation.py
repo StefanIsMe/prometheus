@@ -78,7 +78,7 @@ _CTX = ssl.create_default_context()
 _USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36"
 
 
-def _http_get(url: str, timeout: int = 30) -> tuple[int, dict, str]:
+def _http_get(url: str, timeout: int = 30) -> tuple[int, dict[str, str], str]:
     """Make an HTTP GET request. Returns (status, headers, body)."""
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     try:
@@ -90,7 +90,9 @@ def _http_get(url: str, timeout: int = 30) -> tuple[int, dict, str]:
         return 0, {}, str(e)
 
 
-def _http_post(url: str, data: dict, timeout: int = 30) -> tuple[int, dict, str]:
+def _http_post(
+    url: str, data: dict[str, str], timeout: int = 30
+) -> tuple[int, dict[str, str], str]:
     """Make an HTTP POST request with form data. Returns (status, headers, body)."""
     encoded = urllib.parse.urlencode(data).encode()
     req = urllib.request.Request(
@@ -213,12 +215,12 @@ def test_authorize_endpoint(
         params["code_challenge_method"] = code_challenge_method
 
     url = f"{authorize_url}?{urllib.parse.urlencode(params)}"
-    status, headers, body = _http_get(url)
+    status, _headers, body = _http_get(url)
 
     # Determine if the request was accepted (login page shown) vs rejected (error)
     body_lower = body.lower()
     has_login = any(kw in body_lower for kw in ["login", "sign in", "password", "email"])
-    _has_error = any(  # noqa: F841  — kept for future assertion hooks
+    _has_error = any(
         kw in body_lower
         for kw in ["invalid_request", "unsupported_response_type", "invalid_client"]
     )
@@ -321,7 +323,6 @@ def validate_pkce_downgrade(
     """
     evidence = []
     details: dict[str, Any] = {}
-    severity = "info"
     validated = False
 
     # Step 1: Fetch OIDC config
@@ -363,8 +364,10 @@ def validate_pkce_downgrade(
             error="No vulnerability: 'plain' PKCE method is not advertised",
         )
 
+    severity = "info"
+    confidence = 0.0
+    validated = False
     evidence.append("FINDING: 'plain' IS advertised in code_challenge_methods_supported")
-    severity = "medium"
 
     # Step 3: Generate PKCE values
     verifier, challenge_plain, challenge_s256 = generate_pkce_pair()

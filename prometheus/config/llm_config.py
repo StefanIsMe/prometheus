@@ -148,13 +148,13 @@ def _resolve_api_key(entry: dict[str, Any] | str) -> str | None:
     """
     if isinstance(entry, str):
         return entry.strip() or None
-    if isinstance(entry, dict):
-        env_var = entry.get("env")
-        if env_var:
-            return os.environ.get(str(env_var))
-        raw_key = entry.get("key")
-        if raw_key:
-            return str(raw_key)
+    # entry is `dict[str, Any]` here (the only remaining branch of the union).
+    env_var = entry.get("env")
+    if env_var:
+        return os.environ.get(str(env_var))
+    raw_key = entry.get("key")
+    if raw_key:
+        return str(raw_key)
     return None
 
 
@@ -259,20 +259,11 @@ def _parse_config(raw: dict[str, Any], path: Path) -> LlmConfig:
                         api_keys.append(env_val)
 
             # Fallback: Nous OAuth token from auth store
+            # (Nous OAuth removed; rely on env-provided NOUS_API_KEY instead.)
             if not api_keys and name.lower() == "nous":
-                try:
-                    from prometheus.config.nous_oauth import (
-                        is_nous_oauth_configured,
-                        get_nous_api_key_from_oauth,
-                    )
-
-                    if is_nous_oauth_configured():
-                        oauth_key = get_nous_api_key_from_oauth()
-                        if oauth_key:
-                            api_keys.append(oauth_key)
-                            logger.info("Nous provider: resolved API key from OAuth store")
-                except Exception as exc:
-                    logger.debug("Nous OAuth fallback failed: %s", exc)
+                logger.debug(
+                    "Nous OAuth removed; expecting NOUS_API_KEY in env for provider '%s'", name
+                )
 
             # Extra headers
             extra_headers = {}

@@ -24,7 +24,7 @@ from prometheus.core.comms import get_active_run, write_status
 
 
 if TYPE_CHECKING:
-    from prometheus.tools.knowledge.store import KnowledgeStore
+    pass
 
 
 class CandidateStore:

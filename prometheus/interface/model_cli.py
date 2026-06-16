@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -22,7 +23,7 @@ CONFIG_PATH = Path.home() / ".prometheus" / "llm.yaml"
 ENV_PATH = Path.home() / ".prometheus" / ".env"
 
 
-def _load() -> dict:
+def _load() -> dict[str, Any]:
     """Load the YAML config."""
     if not CONFIG_PATH.is_file():
         return {"providers": {}, "routing": {}, "defaults": {"tier": "medium"}}
@@ -33,7 +34,7 @@ def _load() -> dict:
     return raw
 
 
-def _save(data: dict) -> None:
+def _save(data: dict[str, Any]) -> None:
     """Write the YAML config back to disk."""
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False))
@@ -314,7 +315,8 @@ def _cmd_remove(name: str) -> None:
 def run_model_cli(args: list[str]) -> None:
     """Dispatch 'prometheus model <subcommand> ...'."""
     if not args or args[0] in ("-h", "--help", "help"):
-        print(__doc__.strip())
+        doc = __doc__ or ""
+        print(doc.strip() if doc else "")
         return
 
     cmd = args[0]

@@ -72,7 +72,7 @@ _TRANSPORT_ERROR_BASE_DELAY = 3.0  # seconds; backs off 3 → 6 → 12 → 24 �
 _transport_error_retries: dict[str, int] = {}
 
 # Retry for "Prepared model input is empty" — SDK session compaction edge case
-_EMPTY_INPUT_MAX_RETRIES = 2  # noqa: F841  — retained for test compatibility
+_EMPTY_INPUT_MAX_RETRIES = 2  # codeql[py/unused-global-variable] : retained for test compatibility (tests/test_empty_input.py asserts the SDK path doesn't reference it)
 _EMPTY_INPUT_RETRY_DELAY = 2.0  # seconds; backs off 2 → 4
 _empty_input_retries: dict[str, int] = {}
 
@@ -103,11 +103,6 @@ def _mark_sink_dead(agent_id: str) -> None:
     are silently skipped to avoid log spam.
     """
     _sink_dead.add(agent_id)
-
-
-def _reset_event_sink_health(agent_id: str) -> None:
-    """Reset the per-agent sink health (e.g. on a new scan / agent)."""
-    _sink_dead.discard(agent_id)
 
 
 # --- Fix 5: stream stall watchdog ---
@@ -644,7 +639,7 @@ async def run_agent_loop(
     result: RunResultBase | None = None
 
     # --- Fix 7: start health monitor for root agent (monitors all children) ---
-    _health_monitor_task: asyncio.Task | None = None
+    _health_monitor_task: asyncio.Task[None] | None = None
     if context.get("parent_id") is None:
         _health_monitor_task = asyncio.create_task(
             _monitor_agent_health(coordinator, context),
@@ -721,8 +716,6 @@ async def run_agent_loop(
             _health_monitor_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await _health_monitor_task
-        # End of run_agent_loop — see CodeQL py/ineffectual-statement
-        # noqa: PLW0127  — blank lines retained for visual separation
 
 
 async def spawn_child_agent(
@@ -1155,8 +1148,6 @@ def _check_consecutive_tool_errors(
         # via the bool-returning shim; we need the str kind here to
         # distinguish logical / gate / None.
         kind = _is_tool_output_error_kind(output)
-        if isinstance(kind, bool):  # pragma: no cover — defensive
-            kind = "logical" if kind else None
         is_gate = kind == "gate"
         is_infra = _is_infrastructure_error(output) if not is_gate else False
         is_logical_error = kind == "logical" and not is_infra
@@ -1651,17 +1642,6 @@ def _infer_model_from_raw(raw: Any) -> str:
     return ""
 
 
-def _model_kind(model_id: str) -> str:
-    """Map a model_id to a short kind label like 'mimo' or 'deepseek-r1'."""
-    if not model_id:
-        return ""
-    lc = model_id.lower()
-    for needle, kind in _MODEL_KIND_HINTS:
-        if needle in lc:
-            return kind
-    return ""
-
-
 def _extract_message_text(raw: Any) -> str:
     """Pull the visible text out of a raw message item, regardless of how
     the SDK shaped it. Returns '' if nothing useful is found.
@@ -1829,7 +1809,7 @@ def _is_tool_output_error_bool(output: Any) -> bool:
 # boolean-returning version under the historic name so the existing
 # test imports keep working. The str-returning version remains primary
 # (call sites that want the kind use it).
-_is_tool_output_error = _is_tool_output_error_bool  # type: ignore[assignment]  # noqa: F841  — kept for tests/test_circuit_breaker.py
+_is_tool_output_error = _is_tool_output_error_bool  # type: ignore[assignment]  # codeql[py/unused-global-variable] : kept as a re-export of the bool-returning shim for tests/test_circuit_breaker.py
 
 
 # Infrastructure-level failures that should NOT trip the consecutive-tool-error

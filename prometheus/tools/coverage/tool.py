@@ -346,13 +346,6 @@ def hydrate_coverage_from_disk(state_dir: Path) -> None:
         _tracker.load()
 
 
-def _persist() -> None:
-    """Persist the module-level tracker (no-op if not initialised)."""
-    if _tracker is not None:
-        with _tracker_lock:
-            _tracker.persist()
-
-
 def _agent_id_from(ctx: RunContextWrapper) -> str:
     """Extract the agent id from a run context."""
     inner = ctx.context if isinstance(ctx.context, dict) else {}

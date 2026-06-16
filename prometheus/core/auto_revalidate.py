@@ -29,6 +29,7 @@ import logging
 import re
 import ssl
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -184,7 +185,8 @@ def _probe_account_enumeration(endpoint: str) -> dict[str, Any]:
             # Some endpoints return 4xx for non-existent emails
             body = e.read().decode("utf-8", errors="ignore") if e.fp else ""
             fingerprints.append((label, e.code, _body_hash(body)))
-        except Exception as e:  # noqa: BLE001
+        except urllib.error.URLError as e:  # noqa: PERF203
+            # Network-level error (DNS, refused, timeout).
             fingerprints.append((label, 0, f"err={type(e).__name__}"))
 
     if len(fingerprints) < 3:
@@ -215,6 +217,7 @@ def _probe_cors(endpoint: str) -> dict[str, Any]:
             "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
         },
     )
+    _ = body  # body intentionally not used; response headers are the CORS signal
     acao = hdrs.get("access-control-allow-origin") or hdrs.get("Access-Control-Allow-Origin") or ""
     reflects_evil = acao.strip() == "https://evil.example.com" or acao.strip() == "*"
     # The "fixed" state is one where the server does NOT reflect an evil
@@ -305,8 +308,8 @@ def live_revalidate(finding: dict[str, Any]) -> dict[str, Any]:
             "ts": str,            # ISO timestamp
         }
     """
-    if not isinstance(finding, dict):
-        return {"changed": "inconclusive", "evidence": "finding is not a dict"}
+    # `finding` is typed `dict[str, Any]`; the isinstance check is a runtime
+    # guard for callers passing other shapes.
     endpoint = finding.get("endpoint") or finding.get("uri") or ""
     # If endpoint is the auth URL like /authorize, fall back to the
     # .well-known/openid-configuration for PKCE-style findings.

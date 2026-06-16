@@ -642,9 +642,7 @@ def _wrap_tool_call_event(tool: FunctionTool) -> FunctionTool:
         run_id = get_active_run()
         if run_id:
             try:
-                parsed_args = (
-                    json.loads(raw_input) if isinstance(raw_input, str) and raw_input else {}
-                )
+                parsed_args = json.loads(raw_input) if raw_input else {}
             except json.JSONDecodeError:
                 parsed_args = {}
             # Record the full args in the comms stream. The stream is the
@@ -698,7 +696,7 @@ def _wrap_exec_command(tool: FunctionTool) -> FunctionTool:
     async def invoke(ctx: Any, raw_input: str) -> Any:
         cmd = ""
         try:
-            parsed = json.loads(raw_input) if isinstance(raw_input, str) else raw_input
+            parsed = json.loads(raw_input)
             cmd = parsed.get("command", "") if isinstance(parsed, dict) else ""
         except Exception:
             logger.debug("Failed to parse raw_input for command extraction", exc_info=True)
@@ -885,7 +883,7 @@ def _wrap_query_threat_feeds_tool(tool: FunctionTool) -> FunctionTool:
     async def invoke(ctx: Any, raw_input: str) -> Any:
         # Extract technology count from input before calling the tool
         try:
-            parsed = json.loads(raw_input) if isinstance(raw_input, str) else raw_input
+            parsed = json.loads(raw_input)
             if isinstance(parsed, dict):
                 techs = parsed.get("technologies", [])
                 if isinstance(techs, list):

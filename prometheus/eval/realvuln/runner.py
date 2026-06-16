@@ -83,7 +83,7 @@ def _run_prometheus(
     target_dir: Path,
     run_name: str,
     timeout_s: int,
-) -> subprocess.CompletedProcess:
+) -> subprocess.CompletedProcess[str]:
     """Invoke the prometheus CLI on a local code target.
 
     Mirrors ``prometheus.eval.xbow.runner._run_prometheus`` but with

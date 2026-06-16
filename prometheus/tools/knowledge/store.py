@@ -15,7 +15,7 @@ import sqlite3
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,9 @@ _VALID_CATEGORIES = frozenset(
 
 _DEFAULT_DB_PATH = Path.home() / ".prometheus" / "prometheus.db"
 
-_instance: KnowledgeStore | None = None
+_instance: KnowledgeStore | None = (
+    None  # codeql[py/unused-global-variable] : read via `global` inside KnowledgeStore.__new__
+)
 _instance_lock = threading.Lock()
 
 
@@ -45,7 +47,7 @@ class KnowledgeStore:
     guarantees one connection per process.
     """
 
-    def __new__(cls, db_path: Path | str | None = None) -> Self:
+    def __new__(cls, db_path: Path | str | None = None) -> "KnowledgeStore":
         global _instance  # noqa: PLW0603
         requested_path = Path(db_path) if db_path else _DEFAULT_DB_PATH
         if (
@@ -619,7 +621,7 @@ class KnowledgeStore:
             ).fetchall()
 
         # Group knowledge by category
-        knowledge_by_cat: dict[str, list[dict]] = {}
+        knowledge_by_cat: dict[str, list[dict[str, Any]]] = {}
         for row in [dict(r) for r in knowledge]:
             cat = row["category"]
             knowledge_by_cat.setdefault(cat, []).append(row)
@@ -1077,7 +1079,9 @@ class KnowledgeStore:
             now = datetime.now(UTC).isoformat()
             if rs:
                 # Update existing row's external_* fields + status sentinel
-                _sentinel = "external_" + ext_dict["status"]  # noqa: F841  — kept for downstream readers of report_status
+                _sentinel = (
+                    "external_" + ext_dict["status"]
+                )  # codeql[py/unused-local-variable] : mirrors the external_<status> token written to report_status for downstream readers
                 summary = (
                     f"[{now[:19]}] External {platform}/{external_id} closed as "
                     f"{ext_dict['status']} by {ext_dict.get('triager') or 'unknown'}: "

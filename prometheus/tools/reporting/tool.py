@@ -47,31 +47,22 @@ def _detect_bugcrowd_target(target: str) -> bool:
     """Check if a target is a Bugcrowd program.
 
     Detection methods:
-    1. Target URL contains bugcrowd.com
+    1. Target URL host is bugcrowd.com or a subdomain of it
     2. Target is registered in the target registry with platform=bugcrowd
     """
     if not target:
         return False
-    # Use proper URL parsing to avoid substring tricks like
-    # "https://evil.com/?u=https://bugcrowd.com" sneaking through.
-    target_lower = target.lower()
-    if "bugcrowd.com" in target_lower:
-        try:
-            from urllib.parse import urlparse
+    from urllib.parse import urlparse
 
-            parsed = urlparse(target if "://" in target else f"https://{target}")
-            host = (parsed.netloc or "").lower()
-            if host == "bugcrowd.com" or host.endswith(".bugcrowd.com"):
-                return True
-        except ValueError:
-            pass
+    parsed = urlparse(target if "://" in target else f"https://{target}")
+    host = (parsed.netloc or "").lower()
+    if host == "bugcrowd.com" or host.endswith(".bugcrowd.com"):
+        return True
     # Check target registry
     try:
         from prometheus.core.target_registry import TargetRegistry
 
         reg = TargetRegistry()
-        from urllib.parse import urlparse
-
         parsed = urlparse(target if "://" in target else f"https://{target}")
         domain = parsed.netloc or parsed.path.split("/")[0]
         for t in reg.list_targets():
@@ -916,7 +907,7 @@ async def _do_create(  # noqa: PLR0912
                 "Describe what you actually DID, not what could theoretically be done."
             )
 
-    if not isinstance(cvss_breakdown, dict) or not cvss_breakdown:
+    if not cvss_breakdown:
         errors.append(
             "REJECTED: cvss_breakdown must be a JSON object with all 8 CVSS v3.1 metrics. "
             'Example: {"attack_vector":"N","attack_complexity":"L","privileges_required":"N",'
@@ -1182,6 +1173,7 @@ async def _do_create(  # noqa: PLR0912
         existing_vuln_id: int | None = None
         dedup_layer: str | None = None
         dedup_match: dict[str, Any] | None = None
+        domain: str = ""
         try:
             from prometheus.tools.knowledge.store import KnowledgeStore
 
@@ -1220,7 +1212,7 @@ async def _do_create(  # noqa: PLR0912
             and dedup_match.get("finding") is None
             and dedup_match.get("external") is not None
         )
-        if external_only_dedup and existing_vuln_id is None:
+        if external_only_dedup and existing_vuln_id is None and dedup_match is not None:
             try:
                 from prometheus.tools.knowledge.store import KnowledgeStore
 

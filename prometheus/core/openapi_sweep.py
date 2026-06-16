@@ -14,10 +14,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
-
-import httpx
 
 
 @dataclass
@@ -51,7 +50,7 @@ def _resolve_path_params(path: str, params: list[dict[str, Any]] | None) -> str:
     """Substitute ``{x}`` placeholders with a sample integer / string."""
     if not params:
         return re.sub(r"\{[^}]+\}", "1", path)
-    by_name = {p.get("name"): p for p in params if isinstance(p, dict) and p.get("name")}
+    by_name = {p.get("name"): p for p in params if p.get("name")}
 
     def repl(match: re.Match[str]) -> str:
         name = match.group(1)
@@ -146,7 +145,7 @@ def build_auth_probes(
     return probes
 
 
-def write_auth_probes(probes: list[AuthProbe], dest) -> int:
+def write_auth_probes(probes: list[AuthProbe], dest: Path) -> int:
     """Write probes to a JSON file. Returns the count written."""
     from pathlib import Path
 

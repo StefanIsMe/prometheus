@@ -13,7 +13,7 @@ import logging
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,9 @@ _REPORTS_ROOT = Path.home() / ".prometheus" / "reports"
 _COMMS_GLOBAL = Path.home() / ".prometheus" / "comms" / "global"
 _REPORTS_SUMMARY = _COMMS_GLOBAL / "reports.json"
 
-_instance: AutoReporter | None = None
+_instance: AutoReporter | None = (
+    None  # codeql[py/unused-global-variable] : read via `global` inside AutoReporter.__new__
+)
 _instance_lock = threading.Lock()
 
 
@@ -33,7 +35,7 @@ class AutoReporter:
     instance per process.
     """
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+    def __new__(cls, *args: Any, **kwargs: Any) -> "AutoReporter":
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance

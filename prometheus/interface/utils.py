@@ -1089,7 +1089,7 @@ def _is_http_git_repo(url: str) -> bool:
 
 
 def infer_target_type(target: str) -> tuple[str, dict[str, str]]:  # noqa: PLR0911
-    if not target or not isinstance(target, str):
+    if not target:
         raise ValueError("Target must be a non-empty string")
 
     target = target.strip()
@@ -1248,9 +1248,11 @@ def _is_localhost_host(host: str) -> bool:
 
     try:
         ip = ipaddress.ip_address(host_lower)
-        if isinstance(ip, ipaddress.IPv4Address):
+        # ip_address returns one of IPv4Address or IPv6Address; both
+        # have is_loopback. Use type() to narrow for pyright.
+        if type(ip) is ipaddress.IPv4Address:
             return ip.is_loopback  # 127.0.0.0/8
-        if isinstance(ip, ipaddress.IPv6Address):
+        if type(ip) is ipaddress.IPv6Address:
             return ip.is_loopback  # ::1
     except ValueError:
         logger.debug(

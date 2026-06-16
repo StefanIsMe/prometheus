@@ -131,7 +131,7 @@ def generate_unique_flag(challenge_id: str) -> str:
 # ----------------------------------------------------------------------
 # Build / start / stop
 # ----------------------------------------------------------------------
-def _run(cmd: list[str], cwd: Path, *, timeout: int = 900) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], cwd: Path, *, timeout: int = 900) -> subprocess.CompletedProcess[str]:
     """Thin wrapper around subprocess.run with logging + a hard cap."""
     logger.info("$ cd %s && %s", cwd, " ".join(shlex.quote(c) for c in cmd))
     start = time.monotonic()
@@ -239,7 +239,6 @@ def discover_host_port(challenge_dir: Path, internal_port: int = 80) -> int:
     every XBOW challenge follows (the actual web app service is the
     one with the healthcheck on the listen port).
     """
-    import json
     import re
 
     compose_path = challenge_dir / "docker-compose.yml"

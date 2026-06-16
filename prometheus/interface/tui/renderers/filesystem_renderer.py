@@ -69,11 +69,11 @@ def _extract_patch_text(args: dict[str, Any]) -> str:
     raw = args.get("patch")
     if isinstance(raw, str):
         return raw
-    if isinstance(raw, dict):
+    if raw is not None and isinstance(raw, dict):
         inner = raw.get("patch")
         if isinstance(inner, str):
             return inner
-    fallback = args.get("input") if isinstance(args, dict) else None
+    fallback = args.get("input")
     if isinstance(fallback, str):
         return fallback
     return ""

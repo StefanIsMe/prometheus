@@ -45,7 +45,9 @@ _PIPELINE_SCRIPTS_MOUNT = "/scripts"
 
 # Extra bind mounts pending injection into the next Docker container creation.
 # Set by create_or_reuse(), consumed by docker_client._create_container().
-_pending_extra_bind_mounts: list[dict[str, str]] = []  # noqa: F841  — read by docker_client._create_container()
+_pending_extra_bind_mounts: list[
+    dict[str, str]
+] = []  # codeql[py/unused-global-variable] : read via `global` inside _set_extra_bind_mounts() and imported by docker_client._create_container()
 
 
 _SESSION_CACHE: dict[str, dict[str, Any]] = {}
@@ -262,6 +264,8 @@ async def create_or_reuse(
                     f"Is Docker running? Check 'docker info' and 'docker ps'."
                 ) from _last_exc
 
+    if session is None:
+        raise RuntimeError("Failed to create Docker sandbox: session is None")
     try:
         caido_endpoint = await session.resolve_exposed_port(_CONTAINER_CAIDO_PORT)
     except Exception as exc:

@@ -13,6 +13,7 @@ import contextlib
 import json
 import logging
 import os
+from collections.abc import Iterator
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -39,7 +40,7 @@ _SAFE_DOMAIN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,253}$")
 
 
 def _validate_domain(domain: str) -> str:
-    if not isinstance(domain, str) or not _SAFE_DOMAIN_RE.match(domain):
+    if not _SAFE_DOMAIN_RE.match(domain):
         raise ValueError(
             f"Invalid engagement name {domain!r}; use letters, digits, dots, "
             "underscores, dashes; max 254 chars; must start alphanumeric."
@@ -84,7 +85,7 @@ def _default_engine_log() -> str:
 
 
 @contextlib.contextmanager
-def _suppress_oserror():
+def _suppress_oserror() -> Iterator[None]:
     try:
         yield
     except OSError:

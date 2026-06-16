@@ -549,7 +549,7 @@ class BrowserSession:
 
             # Check query params with ID-like names
             if "?" in url:
-                base, qs = url.split("?", 1)
+                _base, qs = url.split("?", 1)
                 for param in qs.split("&"):
                     if "=" in param:
                         key, val = param.split("=", 1)
@@ -571,7 +571,7 @@ class BrowserSession:
     # Cleanup
     # ------------------------------------------------------------------
 
-    async def close(self):
+    async def close(self) -> None:
         """Clean up browser session state."""
         pass
 
@@ -585,7 +585,6 @@ def open_browser(url: str = "") -> None:
     """Open a URL in the local Chrome instance via CDP."""
     import os
     import subprocess
-    import sys
 
     chrome_path = "/usr/bin/google-chrome-stable"
     user_data_dir = os.environ.get(

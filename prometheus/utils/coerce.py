@@ -27,9 +27,8 @@ def coerce_to_list[T](
         return fallback
     if isinstance(value, list):
         return value
-    if not isinstance(value, str):
-        return [value]  # type: ignore[list-item]
-
+    # value is `str` here (list and None are gone), so the JSON branch
+    # is the only remaining case.
     text = value.strip()
     if not text:
         return fallback
