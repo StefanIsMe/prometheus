@@ -91,7 +91,7 @@ def _hash_embedder(texts: list[str]) -> list[list[float]]:
         norm = (text or "").lower()
         for i in range(len(norm) - 2):
             trigram = norm[i : i + 3]
-            h = int(hashlib.md5(trigram.encode("utf-8")).hexdigest()[:8], 16)
+            h = int(hashlib.md5(trigram.encode("utf-8"), usedforsecurity=False).hexdigest()[:8], 16)
             idx = h % 64
             sign = 1.0 if (h & 1) else -1.0
             vec[idx] += sign
