@@ -19,7 +19,9 @@ from prometheus.tools.knowledge.store import KnowledgeStore
 
 logger = logging.getLogger(__name__)
 
-_instance: CrossTargetIntel | None = None  # codeql[py/unused-global-variable] : read via `global` inside CrossTargetIntel.__new__
+_instance: CrossTargetIntel | None = (
+    None  # codeql[py/unused-global-variable] : read via `global` inside CrossTargetIntel.__new__
+)
 _instance_lock = threading.Lock()
 
 # Normalised technology aliases — canonical form on the right.

@@ -20,7 +20,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_instance: TargetRegistry | None = None  # codeql[py/unused-global-variable] : read via `global` inside TargetRegistry.__new__
+_instance: TargetRegistry | None = (
+    None  # codeql[py/unused-global-variable] : read via `global` inside TargetRegistry.__new__
+)
 _instance_lock = threading.Lock()
 
 

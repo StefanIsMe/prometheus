@@ -45,7 +45,9 @@ _PIPELINE_SCRIPTS_MOUNT = "/scripts"
 
 # Extra bind mounts pending injection into the next Docker container creation.
 # Set by create_or_reuse(), consumed by docker_client._create_container().
-_pending_extra_bind_mounts: list[dict[str, str]] = []  # codeql[py/unused-global-variable] : read via `global` inside _set_extra_bind_mounts() and imported by docker_client._create_container()
+_pending_extra_bind_mounts: list[
+    dict[str, str]
+] = []  # codeql[py/unused-global-variable] : read via `global` inside _set_extra_bind_mounts() and imported by docker_client._create_container()
 
 
 _SESSION_CACHE: dict[str, dict[str, Any]] = {}

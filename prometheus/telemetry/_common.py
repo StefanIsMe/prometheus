@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 
 SESSION_ID: str = uuid4().hex[:16]
 
-_FIRST_RUN_CACHED: bool | None = None  # codeql[py/unused-global-variable] : read via `global` inside is_first_run()
+_FIRST_RUN_CACHED: bool | None = (
+    None  # codeql[py/unused-global-variable] : read via `global` inside is_first_run()
+)
 
 
 def get_version() -> str:

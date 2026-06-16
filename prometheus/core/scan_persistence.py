@@ -18,7 +18,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_instance: ScanPersistence | None = None  # codeql[py/unused-global-variable] : read via `global` inside ScanPersistence.__new__
+_instance: ScanPersistence | None = (
+    None  # codeql[py/unused-global-variable] : read via `global` inside ScanPersistence.__new__
+)
 _instance_lock = threading.Lock()
 
 

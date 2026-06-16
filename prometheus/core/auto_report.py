@@ -22,7 +22,9 @@ _REPORTS_ROOT = Path.home() / ".prometheus" / "reports"
 _COMMS_GLOBAL = Path.home() / ".prometheus" / "comms" / "global"
 _REPORTS_SUMMARY = _COMMS_GLOBAL / "reports.json"
 
-_instance: AutoReporter | None = None  # codeql[py/unused-global-variable] : read via `global` inside AutoReporter.__new__
+_instance: AutoReporter | None = (
+    None  # codeql[py/unused-global-variable] : read via `global` inside AutoReporter.__new__
+)
 _instance_lock = threading.Lock()
 
 
