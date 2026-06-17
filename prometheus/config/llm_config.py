@@ -106,6 +106,10 @@ class ModelSpec:
     tier: Tier = Tier.MEDIUM
     max_tokens: int = 8192
     supports_thinking: bool = False
+    # Total prompt + output token budget for the model. None = unknown.
+    # Used for pre-flight prompt-size validation and budgeting scans.
+    # Distinct from `max_tokens` (output cap per response).
+    context_window: int | None = None
 
 
 @dataclass
@@ -288,6 +292,11 @@ def _parse_config(raw: dict[str, Any], path: Path) -> LlmConfig:
                             tier=tier,
                             max_tokens=int(mdata.get("max_tokens", 8192)),
                             supports_thinking=bool(mdata.get("supports_thinking", False)),
+                            context_window=(
+                                int(mdata["context_window"])
+                                if mdata.get("context_window") is not None
+                                else None
+                            ),
                         )
                     elif isinstance(mdata, str):
                         # Shorthand: model_id: tier

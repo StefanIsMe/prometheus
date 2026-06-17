@@ -1231,9 +1231,30 @@ async def _check_llm_budget(scan_id: str) -> tuple[bool, str]:
     """
     try:
         from prometheus.config import load_settings
+        from prometheus.config.models import get_active_model_resolution
 
-        settings = load_settings()
-        provider_name = (settings.llm.provider or "").lower()
+        # Prefer the live resolved model — settings.llm has no `provider`
+        # field; the provider name only lives on the resolution object
+        # populated by configure_sdk_model_defaults().
+        resolution = get_active_model_resolution()
+        if resolution is not None and getattr(resolution, "provider_name", None):
+            provider_name = resolution.provider_name.lower()
+        else:
+            settings = load_settings()
+            # Fallback: derive a hint from api_base. This is a best-effort
+            # preflight so accuracy is not critical — we just want a key
+            # to look up.
+            api_base = (getattr(settings.llm, "api_base", "") or "").lower()
+            if "deepseek" in api_base:
+                provider_name = "deepseek"
+            elif "anthropic" in api_base:
+                provider_name = "anthropic"
+            elif "openrouter" in api_base:
+                provider_name = "openrouter"
+            elif api_base:
+                provider_name = "openai"
+            else:
+                provider_name = ""
     except Exception as exc:  # noqa: BLE001
         logger.debug("Budget preflight: settings load failed (%s); skipping", exc)
         return True, "settings load failed; skipping preflight"

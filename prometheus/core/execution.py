@@ -16,7 +16,7 @@ import httpx
 from agents import RunConfig, Runner
 from agents.exceptions import AgentsException, MaxTurnsExceeded, UserError
 from agents.stream_events import RunItemStreamEvent
-from openai import APIConnectionError, APIError
+from openai import APIConnectionError, APIError, APIStatusError, BadRequestError
 
 from prometheus.core.comms import get_active_run, write_status
 from prometheus.core.inputs import child_initial_input
@@ -60,6 +60,32 @@ _PROVIDER_ERROR_BASE_DELAY = 3.0  # seconds; backs off 3 → 6 → 12 → 24 →
 
 # --- Fix: track agents that exhausted provider error retries (prevents Fix 3/6 cascade) ---
 _provider_error_exhausted: set[str] = set()
+
+
+def _is_non_retryable_provider_error(exc: BaseException) -> bool:
+    """Return True for provider errors that re-running the same request will
+    never fix.
+
+    4xx codes other than 429 (rate-limit) signal a malformed request — the
+    provider is rejecting the payload itself. Examples we have hit in
+    production:
+
+    * ``BadRequestError`` (400) — invalid tool-call arguments JSON
+    * ``AuthenticationError`` (401) / ``PermissionDeniedError`` (403) — bad key
+    * ``NotFoundError`` (404) — wrong model id / endpoint
+    * ``ConflictError`` (409) / ``UnprocessableEntityError`` (422)
+
+    Connection errors and 5xx / 429 are retried separately by other code paths.
+    """
+    if isinstance(exc, BadRequestError):
+        return True
+    if isinstance(exc, APIStatusError):
+        code = getattr(exc, "status_code", None)
+        if code is None:
+            return False
+        return 400 <= code < 500 and code != 429
+    return False
+
 
 # --- Fix 4: retry on transport errors (mid-stream connection drops) ---
 _TRANSPORT_ERROR_TYPES = (
@@ -316,10 +342,15 @@ async def auto_respawn_child(
     _respawn_counts[agent_id] = respawns + 1
     original_task = str(md.get("task", ""))
     respawn_task = _build_respawn_context(agent_id, original_task)
-    name = md.get("name", agent_id)
+    base_name = md.get("name", agent_id)
+    # Give the respawned child a distinct name so log lines and parent
+    # notifications don't get confused between the original agent and
+    # its replacement — previously parent_id == child_name == child_id
+    # all collided.
+    name = f"{base_name}_r{respawns + 1}"
 
     logger.info(
-        "auto_respawn_child: respawning %s (%s) attempt %d/%d, task_len=%d",
+        "auto_respawn_child: respawning %s (orig_id=%s) attempt %d/%d, task_len=%d",
         name,
         agent_id,
         respawns + 1,
@@ -333,6 +364,7 @@ async def auto_respawn_child(
         {
             "agent_id": agent_id,
             "name": name,
+            "original_name": base_name,
             "status": status,
             "attempt": respawns + 1,
         },
@@ -348,8 +380,8 @@ async def auto_respawn_child(
                 "type": "instruction",
                 "priority": "high",
                 "content": (
-                    f"[Auto-respawn] {name} ({agent_id}) was {status}. "
-                    f"Attempt {respawns + 1}/{_MAX_AUTO_RESPAWN}: "
+                    f"[Auto-respawn] {base_name} ({agent_id}) was {status}. "
+                    f"Spawned replacement {name} (attempt {respawns + 1}/{_MAX_AUTO_RESPAWN}): "
                     f"respawning with progress context. "
                     f"Previous task: {original_task[:200]}"
                 ),
@@ -2055,7 +2087,20 @@ async def _run_cycle(  # noqa: PLR0912
             # raise "Prepared model input is empty" no matter what we
             # pass. Surface a clear error immediately instead of burning
             # 3 LLM cycles in a retry loop.
+            #
+            # For the ROOT agent, mark the run as "stopped" (not "failed")
+            # in advance so the post-scan unfiled-knowledge check still
+            # runs and surfaces any discoveries the agent made before
+            # context was lost. Without this, an EmptyModelInputError on
+            # the root agent makes the run look like a crash and the
+            # UNFILED KNOWLEDGE warning gets buried under the traceback.
             if not input_data and not await _session_has_content(session):
+                if context.get("parent_id") is None and coordinator is not None:
+                    try:
+                        await coordinator.set_status(agent_id, "stopped")
+                        await _notify_parent_on_terminal(coordinator, agent_id, "stopped")
+                    except Exception:
+                        logger.debug("Pre-emptive stopped status set failed for %s", agent_id)
                 raise EmptyModelInputError(
                     f"agent {agent_id}: prepared model input is empty and "
                     f"session has no items — compaction or truncation "
@@ -2182,7 +2227,15 @@ async def _run_cycle(  # noqa: PLR0912
             # Fix 6: retry on provider (API) errors for ALL agents (root + child)
             # Previously only child agents retried; root agents failed immediately.
             # This makes scans self-healing against transient API failures.
-            if isinstance(exc, APIError):
+            #
+            # Only retry on transient/transient-ish errors: connection
+            # failures (no HTTP response), 429 (rate-limited), and 5xx
+            # (server-side). 4xx other than 429 (BadRequestError,
+            # AuthenticationError, PermissionDeniedError, NotFoundError,
+            # etc.) signal a malformed request — re-sending the same
+            # payload will fail identically and just wastes ~3 minutes of
+            # scan time. Bail out immediately so the agent can be respawned.
+            if isinstance(exc, APIError) and not _is_non_retryable_provider_error(exc):
                 retries = _provider_error_retries.get(agent_id, 0)
                 if retries < _PROVIDER_ERROR_MAX_RETRIES:
                     _provider_error_retries[agent_id] = retries + 1
@@ -2200,6 +2253,15 @@ async def _run_cycle(  # noqa: PLR0912
                 # retries exhausted — clean up and fall through
                 _provider_error_retries.pop(agent_id, None)
                 _provider_error_exhausted.add(agent_id)
+            elif isinstance(exc, APIStatusError) and _is_non_retryable_provider_error(exc):
+                logger.warning(
+                    "Non-retryable provider error for %s (status=%s); not retrying: %s",
+                    agent_id,
+                    getattr(exc, "status_code", "?"),
+                    exc,
+                )
+                # Mark exhausted so the second/third retry blocks below also skip
+                _provider_error_exhausted.add(agent_id)
 
             if not interactive:
                 # Fix 3: for child agents, retry on provider (API) errors
@@ -2207,6 +2269,7 @@ async def _run_cycle(  # noqa: PLR0912
                 if (
                     agent_id not in _provider_error_exhausted
                     and isinstance(exc, APIError)
+                    and not _is_non_retryable_provider_error(exc)
                     and context.get("parent_id") is not None
                 ):
                     retries = _provider_error_retries.get(agent_id, 0)
@@ -2240,6 +2303,7 @@ async def _run_cycle(  # noqa: PLR0912
             if (
                 agent_id not in _provider_error_exhausted
                 and isinstance(exc, APIError)
+                and not _is_non_retryable_provider_error(exc)
                 and context.get("parent_id") is not None
             ):
                 retries = _provider_error_retries.get(agent_id, 0)

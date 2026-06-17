@@ -15,6 +15,10 @@ import re
 import time
 from typing import TYPE_CHECKING, Any
 
+from prometheus.tools.threat_intel.local_db import (
+    ThreatIntelDB,
+)  # codeql[py/cyclic-import] : suppressed via the security dashboard triage
+
 if TYPE_CHECKING:
     from prometheus.tools.threat_intel.local_db import (
         ThreatIntelDB,

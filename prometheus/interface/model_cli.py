@@ -113,8 +113,12 @@ def _cmd_list() -> None:
             for mid, mdata in models.items():
                 if isinstance(mdata, dict):
                     tier = mdata.get("tier", "?")
-                    ctx = mdata.get("max_tokens", "?")
-                    print(f"    model: {mid}  (tier={tier}, max_tokens={ctx})")
+                    mx = mdata.get("max_tokens", "?")
+                    cw = mdata.get("context_window")
+                    extras = f"tier={tier}, max_tokens={mx}"
+                    if cw:
+                        extras += f", context_window={int(cw):,}"
+                    print(f"    model: {mid}  ({extras})")
                 else:
                     print(f"    model: {mid}  ({mdata})")
         else:

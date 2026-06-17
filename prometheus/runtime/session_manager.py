@@ -36,9 +36,13 @@ _BROWSERCODE_MOUNT = "/opt/browsercode"
 
 # Scan pipeline script mount — the script isn't in the upstream prometheus-sandbox image.
 # Mount the entire scripts/ directory so Docker can create /scripts/ as a mount point.
+# The scripts/ directory lives at the repository root (../scripts relative to this
+# package), not inside prometheus/. The PROMETHEUS_SCRIPTS_DIR env var lets operators
+# override this — e.g. the realvuln harness sets it explicitly.
 _PIPELINE_SCRIPTS_HOST = Path(
     os.environ.get(
-        "PROMETHEUS_SCRIPTS_DIR", str(Path(__file__).resolve().parent.parent / "scripts")
+        "PROMETHEUS_SCRIPTS_DIR",
+        str(Path(__file__).resolve().parent.parent.parent / "scripts"),
     )
 )
 _PIPELINE_SCRIPTS_MOUNT = "/scripts"
