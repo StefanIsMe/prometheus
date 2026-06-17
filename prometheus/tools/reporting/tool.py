@@ -82,6 +82,166 @@ def _detect_bugcrowd_target(target: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Title-quality gate (PR 2 of the launchdarkly-empty-scan fixes)
+# ---------------------------------------------------------------------------
+
+# Hostnames the LLM uses as scratch URLs while iterating. Reports
+# targeting ONLY these hosts (or whose title literally embeds them) are
+# rejected — they always indicate the agent hasn't pointed the finding
+# at the real in-scope target.
+_TITLE_QUALITY_SCRATCH_HOSTS: frozenset[str] = frozenset(
+    {
+        "example.com",
+        "example.org",
+        "example.net",
+        "localhost",
+        "127.0.0.1",
+        "0.0.0.0",
+    }
+)
+
+# Vulnerability-class nouns the title should contain (or at least one
+# of) so a finding is identifiable. Kept short — too long a list and
+# we over-fit. The list mirrors the "What IS reportable" block in the
+# function docstring, reduced to the most common single-word stems.
+_TITLE_QUALITY_NOUNS: tuple[str, ...] = (
+    "injection",
+    "xss",
+    "csrf",
+    "ssrf",
+    "idor",
+    "rce",
+    "auth",
+    "bypass",
+    "leak",
+    "exposure",
+    "disclosure",
+    "introspection",
+    "traversal",
+    "execution",
+    "upload",
+    "deserialization",
+    "redirect",
+    "forgery",
+    "tampering",
+    "escalation",
+    "vulnerability",
+    "weakness",
+    "flaw",
+    "defect",
+    "issue",
+    "finding",
+    "config",
+    "misconfiguration",
+    "header",
+    "cors",
+    "cookie",
+    "session",
+    "token",
+    "credential",
+    "password",
+    "secret",
+    "key",
+    "cve",
+)
+
+_TITLE_QUALITY_NOUN_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(n) for n in _TITLE_QUALITY_NOUNS) + r")\b",
+    re.IGNORECASE,
+)
+_TITLE_QUALITY_TEST_PREFIX_RE = re.compile(
+    r"^\s*(test|fuzz|sample|example)\s*[:\-_]\s*", re.IGNORECASE
+)
+
+
+def _extract_hosts(value: str) -> list[str]:
+    """Pull every host-looking token out of ``value`` (URLs, bare domains)."""
+    if not value:
+        return []
+    from urllib.parse import urlparse
+
+    hosts: list[str] = []
+    for token in re.split(r"[\s,;]+", value):
+        token = token.strip().strip("()[]<>\"'`")
+        if not token:
+            continue
+        if "://" in token:
+            parsed = urlparse(token)
+            host = (parsed.netloc or "").split("@")[-1].split(":")[0].lower()
+        elif "/" in token or "." in token:
+            # Bare host (with or without a path).
+            host = token.split("/")[0].split("@")[-1].split(":")[0].lower()
+        else:
+            continue
+        if host:
+            hosts.append(host)
+    return hosts
+
+
+def _validate_title_quality(title: str, target: str) -> str | None:
+    """Return a rejection message if the title is obviously a placeholder.
+
+    Returns ``None`` if the title is fine.
+
+    Three classes of failure are caught:
+      1. **Placeholder titles** — ``"test"``, ``"Test"``, ``"Test foo"``.
+         The LLM emits these while iterating and forgets to replace them
+         on the way to ``create_vulnerability_report``.
+      2. **Scratch-target leakage** — title or target contain a host from
+         :data:`_TITLE_QUALITY_SCRATCH_HOSTS`. Indicates the agent is
+         filing a finding from a manual test against an example URL.
+      3. **No vulnerability noun** — title has no word from
+         :data:`_TITLE_QUALITY_NOUNS` and is long enough that it's
+         clearly not just a CVE-id-style shorthand. This catches the
+         case where the LLM writes a sentence-length "title" that's
+         really a description.
+    """
+    t = (title or "").strip()
+    if not t:
+        return "REJECTED: title is empty."
+
+    lower = t.lower()
+    # 1. Bare placeholder
+    if lower in {"test", "tests", "test.", "testing", "fuzz", "fuzz."}:
+        return (
+            f"REJECTED: title '{t}' is a placeholder. "
+            "Replace with a real, specific finding title (e.g. "
+            "'SQL Injection in /api/users login parameter')."
+        )
+    # 2. 'Test' prefix
+    if _TITLE_QUALITY_TEST_PREFIX_RE.match(t):
+        return (
+            f"REJECTED: title '{t}' starts with a placeholder prefix "
+            "(test:/fuzz:/sample:/example:). Replace with a real, "
+            "specific finding title."
+        )
+
+    # 3. Scratch-target leakage from title or target
+    hosts_in_title = _extract_hosts(t)
+    hosts_in_target = _extract_hosts(target or "")
+    bad_hosts = [h for h in (hosts_in_title + hosts_in_target) if h in _TITLE_QUALITY_SCRATCH_HOSTS]
+    if bad_hosts:
+        return (
+            f"REJECTED: title/target references a scratch host "
+            f"({', '.join(sorted(set(bad_hosts)))}). "
+            "Reports must point at the in-scope target. "
+            "If the agent tested against example.com while iterating, "
+            "re-test against the real target before filing."
+        )
+
+    # 4. No vulnerability noun in a long title
+    if len(t) >= 20 and not _TITLE_QUALITY_NOUN_RE.search(t):
+        return (
+            f"REJECTED: title '{t[:80]}' has no recognisable "
+            "vulnerability noun. Use a specific class name "
+            "(injection, XSS, SSRF, IDOR, auth bypass, etc.) so the "
+            "finding is identifiable in dedup and reporting."
+        )
+
+    return None
+
+
 _CVSS_VALID = {
     "attack_vector": ["N", "A", "L", "P"],
     "attack_complexity": ["L", "H"],
@@ -418,6 +578,20 @@ async def _do_create(  # noqa: PLR0912
                     "real responses, and a real attack demonstration."
                 )
                 break
+
+    # Title-quality gate (PR 2 of the launchdarkly-empty-scan fixes).
+    # The previous scan logged nine reports for one underlying finding and
+    # five placeholder titles ("test", "Test", "Test GraphQL finding",
+    # "Test target=https://example.com"). The existing placeholder regex
+    # list only covers full-sentence filler in body fields, not bare
+    # titles. This block rejects:
+    #   * titles that are just "test", "Test", or "Test <stuff>"
+    #   * titles whose only target/endpoint is example.com / localhost
+    #     (the LLM uses these as scratch URLs while iterating)
+    #   * titles with no detectable vulnerability noun
+    title_err = _validate_title_quality(title, target)
+    if title_err:
+        errors.append(title_err)
 
     # PoC quality gates — reject theoretical/empty proofs
     poc_desc = str(fields.get("poc_description") or "").strip()
