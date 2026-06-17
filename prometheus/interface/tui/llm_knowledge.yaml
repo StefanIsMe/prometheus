@@ -1,0 +1,179 @@
+# Prometheus LLM Knowledge Base
+# =================================
+#
+# Local lookup table for LLM metadata: context windows, output caps,
+# pricing, free-tier windows, and known aliases. The TUI meta panel
+# reads this on every refresh so the sidebar shows known-good values
+# without needing an API call or runtime inference.
+#
+# Override semantics (mirrors llm.yaml):
+#   1. ~/.prometheus/llm_knowledge.yaml  (user override — wins)
+#   2. this file                          (bundled defaults)
+#
+# To add a model you've discovered, either edit this file (committed,
+# shared with the team) or add it to your user override. The TUI
+# auto-detects new entries on the next refresh (mtime-based cache).
+#
+# Schema (per entry):
+#   provider:           provider name (e.g. tokenrouter, openai, openrouter, minimax)
+#   model_id:           canonical model id as it appears in llm.yaml / API calls
+#   aliases:            alternative names the same model appears under (lowercase, optional)
+#   context_window:     total prompt + output token budget, in tokens (integer)
+#   max_output_tokens:  per-response output cap (integer)
+#   supports_thinking:  true if the model supports extended thinking/reasoning (optional)
+#   pricing:            per-million-token USD rates; missing fields default to 0
+#     input_per_million_usd
+#     output_per_million_usd
+#     cached_input_per_million_usd
+#   free_until:         ISO date (YYYY-MM-DD) after which normal pricing applies
+#   notes:              free-form context (provider quirks, version pinning, etc.)
+#
+# Lookup precedence in the TUI:
+#   (provider, model_id) exact match  >  alias match  >  model_id-only match
+
+models:
+
+  # -------------------------------------------------------------------
+  # Stefan Carter's current default — Tokenrouter-routed MiniMax M3
+  # Free trial per Stefan's setup; Tokenrouter public post said "through
+  # June 17" but Stefan reports the trial extends to 2026-06-22 in his
+  # account. Update the date here if the trial is extended/ended.
+  # -------------------------------------------------------------------
+  - provider: tokenrouter
+    model_id: MiniMax-M3
+    aliases:
+      - minimax-m3
+      - minimax_m3
+      - minimax
+      - m3
+    context_window: 524288            # 512K — Tokenrouter's advertised window
+    max_output_tokens: 256000
+    supports_thinking: true
+    pricing:
+      input_per_million_usd: 0.0
+      output_per_million_usd: 0.0
+      cached_input_per_million_usd: 0.0
+    free_until: 2026-06-22
+    notes: >-
+      Tokenrouter free tier, advertises 512K context (the underlying M3
+      supports 1M — see minimax/MiniMax-M3 below). Public Tokenrouter
+      post said "through June 17"; Stefan's account shows 2026-06-22.
+
+  # -------------------------------------------------------------------
+  # Official MiniMax M3 — direct from MiniMax or OpenRouter.
+  # Same model_id, different provider = different window + price.
+  # The TUI disambiguates by the active provider in the resolved model.
+  # -------------------------------------------------------------------
+  - provider: minimax
+    model_id: MiniMax-M3
+    aliases: []
+    context_window: 1048576           # 1M
+    max_output_tokens: 512000
+    supports_thinking: true
+    pricing:
+      input_per_million_usd: 0.30
+      output_per_million_usd: 1.20
+      cached_input_per_million_usd: 0.30
+    notes: >-
+      Official MiniMax M3 spec. Pricing per OpenRouter listing (Jun 2026).
+      Cached-input rate matches input rate (no separate cache discount).
+
+  # Same model on OpenRouter — same price, OpenRouter adds a small markup
+  # but the model-list price matches MiniMax direct.
+  - provider: openrouter
+    model_id: minimax/minimax-m3
+    aliases:
+      - minimax/minimax-m3
+    context_window: 1048576
+    max_output_tokens: 512000
+    supports_thinking: true
+    pricing:
+      input_per_million_usd: 0.30
+      output_per_million_usd: 1.20
+      cached_input_per_million_usd: 0.30
+    notes: OpenRouter listing for M3, matches direct MiniMax pricing.
+
+  # -------------------------------------------------------------------
+  # DeepSeek V4 series — 1M context, MoE, released April 2026.
+  # Pricing is also hardcoded in prometheus/report/usage.py for cost
+  # estimation; keep the two in sync when DeepSeek revises rates.
+  # -------------------------------------------------------------------
+  - provider: deepseek
+    model_id: deepseek-v4-pro
+    aliases:
+      - deepseek-v4-pro
+      - deepseek-pro
+      - deepseek_v4_pro
+    context_window: 1048576           # 1M (April 2026 release)
+    max_output_tokens: 32768
+    supports_thinking: true
+    pricing:
+      input_per_million_usd: 0.435
+      output_per_million_usd: 0.87
+      cached_input_per_million_usd: 0.003625
+    notes: >-
+      DeepSeek V4 Pro, 1.6T-param MoE. Cache-hit pricing is dramatically
+      cheaper than cache-miss (encourages prompt caching).
+
+  - provider: deepseek
+    model_id: deepseek-v4-flash
+    aliases:
+      - deepseek-v4-flash
+      - deepseek-flash
+      - deepseek_v4_flash
+    context_window: 1048576
+    max_output_tokens: 32768
+    supports_thinking: false
+    pricing:
+      input_per_million_usd: 0.14
+      output_per_million_usd: 0.28
+      cached_input_per_million_usd: 0.0028
+    notes: DeepSeek V4 Flash, 13B-active MoE. Cheapest tier.
+
+  # -------------------------------------------------------------------
+  # Common fallbacks — keep these so a "what is this model" lookup
+  # returns something useful even when the user hasn't configured a
+  # model explicitly.
+  # -------------------------------------------------------------------
+
+  - provider: openrouter
+    model_id: openrouter/auto
+    aliases:
+      - openrouter-auto
+      - openrouter/auto
+    context_window: 200000           # varies; OpenRouter auto-router default
+    max_output_tokens: 8192
+    pricing:
+      input_per_million_usd: 0.0     # dynamic — paid by the underlying model
+      output_per_million_usd: 0.0
+      cached_input_per_million_usd: 0.0
+    notes: >-
+      OpenRouter's auto-router. Context window and pricing depend on the
+      upstream model chosen for the request — these are placeholders.
+
+  - provider: anthropic
+    model_id: claude-sonnet-4.6
+    aliases:
+      - claude-sonnet-4
+      - claude-sonnet-4-6
+    context_window: 200000
+    max_output_tokens: 8192
+    supports_thinking: true
+    pricing:
+      input_per_million_usd: 3.0
+      output_per_million_usd: 15.0
+      cached_input_per_million_usd: 0.30
+    notes: Anthropic Sonnet 4.6 (Jun 2026 pricing).
+
+  - provider: openai
+    model_id: gpt-5
+    aliases:
+      - gpt-5
+    context_window: 400000
+    max_output_tokens: 16384
+    supports_thinking: true
+    pricing:
+      input_per_million_usd: 2.5
+      output_per_million_usd: 10.0
+      cached_input_per_million_usd: 1.25
+    notes: OpenAI GPT-5 (2026 tier).

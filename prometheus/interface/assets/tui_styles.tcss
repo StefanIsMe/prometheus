@@ -527,11 +527,13 @@ AddNoteDialog {
 
 #stats_scroll {
     height: auto;
-    max-height: 15;
+    max-height: 14;
     background: transparent;
     padding: 0;
     margin: 0;
     border: round #333333;
+    border-title-color: #22c55e;
+    border-title-style: bold;
     scrollbar-size: 0 0;
 }
 

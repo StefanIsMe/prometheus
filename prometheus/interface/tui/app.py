@@ -38,13 +38,13 @@ from prometheus.interface.tui.findings_library import (
     FindingsLibraryPanel,  # codeql[py/unsafe-cyclic-import] : suppressed via the security dashboard triage
 )  # codeql[py/unsafe-cyclic-import] : findings_library only imports app.prometheusTUIApp inside TYPE_CHECKING, so no runtime cycle
 from prometheus.interface.tui.live_view import TuiLiveView
+from prometheus.interface.tui.llm_meta import build_llm_meta_text, collect_llm_meta
 from prometheus.interface.tui.messages import send_user_message_to_agent
 from prometheus.interface.tui.renderers import render_tool_widget
 from prometheus.interface.tui.renderers.agent_message_renderer import AgentMessageRenderer
 from prometheus.interface.tui.renderers.user_message_renderer import UserMessageRenderer
 from prometheus.interface.tui.scan_launcher import ScanLauncherScreen
 from prometheus.interface.tui.security_feeds_panel import SecurityFeedsPanel
-from prometheus.interface.utils import build_tui_stats_text
 from prometheus.report.state import ReportState, set_global_report_state
 from prometheus.runtime import session_manager
 
@@ -920,6 +920,7 @@ class prometheusTUIApp(App):  # type: ignore[misc]
 
             stats_display = Static("", id="stats_display")
             stats_scroll = VerticalScroll(stats_display, id="stats_scroll")
+            stats_scroll.border_title = "LLM"
 
             vulnerabilities_panel = VulnerabilitiesPanel(id="vulnerabilities_panel")
 
@@ -1492,16 +1493,24 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         if self.screen.selections:
             return
 
-        stats_content = Text()
+        # Build the live-agents dict once — the meta panel uses it as a
+        # fallback for the human agent name when the ledger doesn't have
+        # one. ``self.live_view.agents`` is the TUI's authoritative
+        # source for agent display names.
+        live_view_agents: dict[str, Any] | None = None
+        try:
+            live_view_agents = dict(self.live_view.agents)
+        except Exception:
+            live_view_agents = None
 
-        stats_text = build_tui_stats_text(self.report_state)
-        if stats_text:
-            stats_content.append(stats_text)
+        meta = collect_llm_meta(
+            self.report_state,
+            agent_id=self.selected_agent_id,
+            live_view_agents=live_view_agents,
+        )
+        meta_text = build_llm_meta_text(meta)
 
-        version = get_package_version()
-        stats_content.append(f"\nv{version}", style="white")
-
-        self._safe_widget_operation(stats_display.update, stats_content)
+        self._safe_widget_operation(stats_display.update, meta_text)
 
     def _update_vulnerabilities_panel(self) -> None:
         """Update the vulnerabilities panel with current vulnerability data."""
@@ -1965,8 +1974,12 @@ class prometheusTUIApp(App):  # type: ignore[misc]
 
         if self.focused == agents_tree and node.data:
             agent_id = node.data.get("agent_id")
-            if agent_id:
+            if agent_id and agent_id != self.selected_agent_id:
                 self.selected_agent_id = agent_id
+                # Force the LLM meta panel to refresh immediately so
+                # the user sees the new agent's model/context/cost
+                # without waiting for the next 0.35s UI tick.
+                self._update_stats_display()
 
     @on(Tree.NodeSelected)  # type: ignore[misc]
     def handle_tree_node_selected(self, event: Tree.NodeSelected) -> None:  # type: ignore[type-arg]
