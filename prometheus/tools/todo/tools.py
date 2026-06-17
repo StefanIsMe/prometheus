@@ -324,8 +324,8 @@ def _apply_bulk_status(todo_ids: Any, new_status: str, agent_id: str) -> str:
     return json.dumps(response, ensure_ascii=False, default=str)
 
 
-@function_tool(timeout=30)
-async def create_todo(ctx: RunContextWrapper, todos: list[_CreateTodoInput]) -> str:
+@function_tool(strict_mode=False, timeout=30)
+async def create_todo(ctx: RunContextWrapper, todos: list[dict[str, Any]]) -> str:
     """Create one or more todos for the current agent.
 
     Each agent (including subagents) has its own private todo list —
@@ -465,8 +465,8 @@ async def list_todos(
     )
 
 
-@function_tool(timeout=30)
-async def update_todo(ctx: RunContextWrapper, updates: list[_UpdateTodoInput]) -> str:
+@function_tool(strict_mode=False, timeout=30)
+async def update_todo(ctx: RunContextWrapper, updates: list[dict[str, Any]]) -> str:
     """Update one or more todos. Handles all editable fields including status.
 
     For simple status-only changes you can also use ``mark_todo_completed``
@@ -529,7 +529,7 @@ async def update_todo(ctx: RunContextWrapper, updates: list[_UpdateTodoInput]) -
     return json.dumps(response, ensure_ascii=False, default=str)
 
 
-@function_tool(timeout=30)
+@function_tool(strict_mode=False, timeout=30)
 async def mark_todo_completed(ctx: RunContextWrapper, todo_ids: str | list[str]) -> str:
     """Mark one or more todos as done (completed).
 
@@ -543,7 +543,7 @@ async def mark_todo_completed(ctx: RunContextWrapper, todo_ids: str | list[str])
     return _apply_bulk_status(todo_ids, "done", _agent_id_from(ctx))
 
 
-@function_tool(timeout=30)
+@function_tool(strict_mode=False, timeout=30)
 async def mark_todo_in_progress(ctx: RunContextWrapper, todo_ids: str | list[str]) -> str:
     """Mark one or more todos as in progress.
 
@@ -553,7 +553,7 @@ async def mark_todo_in_progress(ctx: RunContextWrapper, todo_ids: str | list[str
     return _apply_bulk_status(todo_ids, "in_progress", _agent_id_from(ctx))
 
 
-@function_tool(timeout=30)
+@function_tool(strict_mode=False, timeout=30)
 async def delete_todo(ctx: RunContextWrapper, todo_ids: str | list[str]) -> str:
     """Delete one or more todos. Removes them entirely (no soft-delete).
 
