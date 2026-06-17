@@ -150,17 +150,13 @@ def check_file(path: Path) -> list[str]:
             for alias in node.names:
                 top = alias.name.split(".")[0]
                 if top in FORBIDDEN_IMPORTS:
-                    errors.append(
-                        f"{path}:{node.lineno}: forbidden telemetry import '{top}'"
-                    )
+                    errors.append(f"{path}:{node.lineno}: forbidden telemetry import '{top}'")
 
         # `from x import y` / `from x.y import z`
         elif isinstance(node, ast.ImportFrom) and node.module:
             top = node.module.split(".")[0]
             if top in FORBIDDEN_IMPORTS:
-                errors.append(
-                    f"{path}:{node.lineno}: forbidden telemetry import '{top}'"
-                )
+                errors.append(f"{path}:{node.lineno}: forbidden telemetry import '{top}'")
 
     return errors
 
