@@ -746,6 +746,12 @@ class prometheusTUIApp(App):  # type: ignore[misc]
 
         self._displayed_agents: set[str] = set()
         self._displayed_events: list[str] = []
+        # Signature of the last successful meta-panel render. Used by
+        # ``_update_stats_display`` to short-circuit when nothing the
+        # user can see has changed — the dominant cost saving at
+        # 10Hz tick rate. ``Any`` because the fields are heterogeneous
+        # (str, int, float, bool, None).
+        self._stats_signature: Any = None
 
         self._scan_thread: threading.Thread | None = None
         self._scan_loop: asyncio.AbstractEventLoop | None = None
@@ -1043,7 +1049,67 @@ class prometheusTUIApp(App):  # type: ignore[misc]
 
         self._start_scan_thread()
 
-        self.set_interval(0.35, self._update_ui)
+        # Two-tier update cadence. The fast tick drives the parts of
+        # the UI the user actively watches while a scan is running:
+        # the LLM meta panel (context % ticking up) and the per-agent
+        # status row. The slow tick carries the heavier work — agent
+        # graph sync, full chat-view rebuild, vulnerabilities panel,
+        # reports-tab refresh — at 3Hz, which is plenty for those.
+        #
+        # Selection changes bypass both ticks via the
+        # ``watch_selected_agent_id`` reactive watcher, so panel flips
+        # happen on the same frame as the arrow key.
+        self.set_interval(0.1, self._update_ui_fast)
+        self.set_interval(0.35, self._update_ui_slow)
+
+        # Pre-warm the meta panel so the first render is on the same
+        # frame as the splash closing — otherwise the user would see
+        # an empty panel for up to 100ms before the fast tick fires.
+        self.call_after_refresh(self._update_stats_display)
+
+    def _update_ui_fast(self) -> None:
+        """10Hz tick — the parts of the UI that need to feel live."""
+        if self.show_splash:
+            return
+        if len(self.screen_stack) > 1:
+            return
+        if not self.is_mounted:
+            return
+
+        # Cheap work first — both are O(1) in agent count and short-
+        # circuit on a matching signature in _update_stats_display.
+        self._update_stats_display()
+        self._update_agent_status_display()
+
+    def _update_ui_slow(self) -> None:
+        """3Hz tick — heavier work that's fine at a slower cadence."""
+        if self.show_splash:
+            return
+        if len(self.screen_stack) > 1:
+            return
+        if not self.is_mounted:
+            return
+
+        try:
+            chat_history = self.query_one("#chat_history", VerticalScroll)
+            agents_tree = self.query_one("#agents_tree", Tree)
+            if not self._is_widget_safe(chat_history) or not self._is_widget_safe(agents_tree):
+                return
+        except Exception:
+            return
+
+        self._sync_agent_graph()
+
+        for agent_id, agent_data in list(self.live_view.agents.items()):
+            if agent_id not in self._displayed_agents:
+                self._add_agent_node(agent_data)
+                self._displayed_agents.add(agent_id)
+            else:
+                self._update_agent_node(agent_id, agent_data)
+
+        self._update_chat_view()
+        self._update_vulnerabilities_panel()
+        self._maybe_refresh_reports_tab()
 
     def action_launch_scan(self) -> None:
         """Open the scan launcher modal (F3)."""
@@ -1109,43 +1175,6 @@ class prometheusTUIApp(App):  # type: ignore[misc]
 
         self._start_scan_thread()
         self.notify("Scan started — agents are loading", severity="information", timeout=3)
-
-    def _update_ui(self) -> None:
-        if self.show_splash:
-            return
-
-        if len(self.screen_stack) > 1:
-            return
-
-        if not self.is_mounted:
-            return
-
-        try:
-            chat_history = self.query_one("#chat_history", VerticalScroll)
-            agents_tree = self.query_one("#agents_tree", Tree)
-
-            if not self._is_widget_safe(chat_history) or not self._is_widget_safe(agents_tree):
-                return
-        except Exception:
-            return
-
-        self._sync_agent_graph()
-
-        for agent_id, agent_data in list(self.live_view.agents.items()):
-            if agent_id not in self._displayed_agents:
-                self._add_agent_node(agent_data)
-                self._displayed_agents.add(agent_id)
-            else:
-                self._update_agent_node(agent_id, agent_data)
-
-        self._update_chat_view()
-
-        self._update_agent_status_display()
-
-        self._update_stats_display()
-
-        self._update_vulnerabilities_panel()
-        self._maybe_refresh_reports_tab()
 
     def _sync_agent_graph(self) -> None:
         future = self._agent_graph_sync_future
@@ -1482,6 +1511,14 @@ class prometheusTUIApp(App):  # type: ignore[misc]
             self._safe_widget_operation(status_display.add_class, "hidden")
 
     def _update_stats_display(self) -> None:
+        """Refresh the LLM meta panel.
+
+        Cheap-when-unchanged: if the input signature matches the last
+        successful render, the underlying ``Static.update()`` is
+        skipped entirely — Textual otherwise re-rasterises the Rich
+        Text on every call, which is the dominant cost. This is the
+        single most impactful tweak for the 10Hz fast-tick below.
+        """
         try:
             stats_display = self.query_one("#stats_display", Static)
         except Exception:
@@ -1496,7 +1533,8 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         # Build the live-agents dict once — the meta panel uses it as a
         # fallback for the human agent name when the ledger doesn't have
         # one. ``self.live_view.agents`` is the TUI's authoritative
-        # source for agent display names.
+        # source for agent display names. ``list(items())`` would also
+        # work but ``dict`` is correct for the consumer.
         live_view_agents: dict[str, Any] | None = None
         try:
             live_view_agents = dict(self.live_view.agents)
@@ -1509,6 +1547,35 @@ class prometheusTUIApp(App):  # type: ignore[misc]
             live_view_agents=live_view_agents,
         )
         meta_text = build_llm_meta_text(meta)
+
+        # Signature = the fields the renderer actually depends on. Skip
+        # the widget update when nothing the user can see has changed.
+        # Token counts, cost, KB entries, free_until days, model name
+        # — all part of the signature. The ``context_used`` field is
+        # intentionally included so the live "47.0K / 524.3K (9.0%)"
+        # ticks up as the running agent's prompt grows.
+        signature = (
+            meta.agent_id,
+            meta.agent_name,
+            meta.model_id,
+            meta.provider_name,
+            meta.context_window,
+            meta.context_window_source,
+            meta.context_used,
+            meta.total_tokens,
+            meta.input_tokens,
+            meta.output_tokens,
+            meta.cached_tokens,
+            meta.requests,
+            meta.cost,
+            meta.cost_source,
+            meta.is_free_now,
+            meta.free_days_remaining,
+            meta.tier,
+        )
+        if signature == self._stats_signature:
+            return
+        self._stats_signature = signature
 
         self._safe_widget_operation(stats_display.update, meta_text)
 
@@ -1663,6 +1730,13 @@ class prometheusTUIApp(App):  # type: ignore[misc]
             return
 
         self._displayed_events.clear()
+
+        # Flip the LLM meta panel the instant the selection changes —
+        # do NOT wait for the 10Hz fast-tick below. The watcher fires
+        # synchronously inside Textual's reactive dispatch, so the
+        # user sees the new agent's model + context + cost on the
+        # same frame as the highlight.
+        self._update_stats_display()
 
         self.call_later(self._update_chat_view)
         self._update_agent_status_display()
@@ -1975,11 +2049,12 @@ class prometheusTUIApp(App):  # type: ignore[misc]
         if self.focused == agents_tree and node.data:
             agent_id = node.data.get("agent_id")
             if agent_id and agent_id != self.selected_agent_id:
+                # The ``watch_selected_agent_id`` reactive watcher
+                # refreshes the LLM meta panel and clears the chat
+                # event cache synchronously — no need for a direct
+                # _update_stats_display() call here. Setting the
+                # reactive is enough.
                 self.selected_agent_id = agent_id
-                # Force the LLM meta panel to refresh immediately so
-                # the user sees the new agent's model/context/cost
-                # without waiting for the next 0.35s UI tick.
-                self._update_stats_display()
 
     @on(Tree.NodeSelected)  # type: ignore[misc]
     def handle_tree_node_selected(self, event: Tree.NodeSelected) -> None:  # type: ignore[type-arg]
