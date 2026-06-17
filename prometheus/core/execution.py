@@ -30,7 +30,9 @@ if TYPE_CHECKING:
     from agents.lifecycle import RunHooks
     from agents.memory import Session, SQLiteSession
     from agents.result import RunResultBase
-    from agents.items import TResponseInputItem  # codeql[py/unused-import] : re-exported for the agents SDK consumers; remove when SDK stops importing it
+    from agents.items import (
+        TResponseInputItem,
+    )  # codeql[py/unused-import] : re-exported for the agents SDK consumers; remove when SDK stops importing it
 
     from prometheus.core.agents import AgentCoordinator, Status
 
@@ -1601,7 +1603,9 @@ _THINK_CLOSE_RE = re.compile(r"</think>", re.IGNORECASE)
 
 # Map model-id substrings to a short, human-readable "kind" we surface in
 # the tail. Lower-cased substring match — order matters (longest first).
-_MODEL_KIND_HINTS: list[tuple[str, str]] = [  # codeql[py/unused-global-variable] : reserved for future tail-renderer short-name mapping; populated below for downstream tooling
+_MODEL_KIND_HINTS: list[
+    tuple[str, str]
+] = [  # codeql[py/unused-global-variable] : reserved for future tail-renderer short-name mapping; populated below for downstream tooling
     ("minimax", "mimo"),
     ("mimo", "mimo"),
     ("qwq", "qwen-qwq"),

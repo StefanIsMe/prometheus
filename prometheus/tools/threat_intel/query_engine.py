@@ -16,7 +16,9 @@ import time
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from prometheus.tools.threat_intel.local_db import ThreatIntelDB  # codeql[py/cyclic-import] : suppressed via the security dashboard triage
+    from prometheus.tools.threat_intel.local_db import (
+        ThreatIntelDB,
+    )  # codeql[py/cyclic-import] : suppressed via the security dashboard triage
     from prometheus.tools.threat_intel.tool import (  # codeql[py/cyclic-import] : suppressed via the security dashboard triage
         _ECOSYSTEM_MAP,
         _get_github_token,

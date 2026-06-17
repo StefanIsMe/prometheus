@@ -65,7 +65,7 @@ class ScanOrchestrator:
     orchestrator per process.
     """
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> "ScanOrchestrator":
+    def __new__(cls, *args: Any, **kwargs: Any) -> ScanOrchestrator:
         global _instance  # noqa: PLW0603
         if _instance is not None:
             return _instance
@@ -226,7 +226,9 @@ class ScanOrchestrator:
             try:
                 live_view.add_system_message(msg)
             except Exception:
-                logger.debug("add_system_message failed for %r, ignoring", msg, exc_info=True)  # codeql[py/clear-text-logging-sensitive-data] : suppressed via the security dashboard triage
+                logger.debug(
+                    "add_system_message failed for %r, ignoring", msg, exc_info=True
+                )  # codeql[py/clear-text-logging-sensitive-data] : suppressed via the security dashboard triage
 
         # Background thread: own event loop running run_prometheus_scan
         def _thread_target() -> None:

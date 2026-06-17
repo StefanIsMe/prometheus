@@ -11,12 +11,14 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from prometheus.agents.browser_session import TargetProfile  # codeql[py/cyclic-import] : suppressed via the security dashboard triage
+    from prometheus.agents.browser_session import (
+        TargetProfile,
+    )  # codeql[py/cyclic-import] : suppressed via the security dashboard triage
 
 
 # Predefined target profiles
 # Add new targets here following the same format
-def _build_target_profiles() -> dict[str, "TargetProfile"]:
+def _build_target_profiles() -> dict[str, TargetProfile]:
     from prometheus.agents.browser_session import TargetProfile  # noqa: PLC0415  # codeql[py/cyclic-import] : suppressed via the security dashboard triage
 
     return {

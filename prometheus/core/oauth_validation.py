@@ -220,9 +220,11 @@ def test_authorize_endpoint(
     # Determine if the request was accepted (login page shown) vs rejected (error)
     body_lower = body.lower()
     has_login = any(kw in body_lower for kw in ["login", "sign in", "password", "email"])
-    _has_error = any(  # codeql[py/unused-local-variable] : suppressed via the security dashboard triage
-        kw in body_lower
-        for kw in ["invalid_request", "unsupported_response_type", "invalid_client"]
+    _has_error = (
+        any(  # codeql[py/unused-local-variable] : suppressed via the security dashboard triage
+            kw in body_lower
+            for kw in ["invalid_request", "unsupported_response_type", "invalid_client"]
+        )
     )
     is_error_page = status >= 400 and not has_login
 
@@ -364,8 +366,12 @@ def validate_pkce_downgrade(
             error="No vulnerability: 'plain' PKCE method is not advertised",
         )
 
-    severity = "info"  # codeql[py/multiple-definition] : suppressed via the security dashboard triage
-    confidence = 0.0  # codeql[py/multiple-definition] : suppressed via the security dashboard triage
+    severity = (
+        "info"  # codeql[py/multiple-definition] : suppressed via the security dashboard triage
+    )
+    confidence = (
+        0.0  # codeql[py/multiple-definition] : suppressed via the security dashboard triage
+    )
     validated = False
     evidence.append("FINDING: 'plain' IS advertised in code_challenge_methods_supported")
 
