@@ -77,7 +77,7 @@ def consolidate_votes(
 
     A finding is *kept* if it appears in ``>= vote_threshold`` runs and
     has the same ``(vuln_type, endpoint, parameter, auth_state)`` key.
-    Returns the kept list and the dropped list for telemetry.
+    Returns the kept list and the dropped list.
     """
     cfg = config or VoteConfig()
     grouped: dict[tuple[str, str, str, str], VotedFinding] = {}

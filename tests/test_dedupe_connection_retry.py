@@ -22,7 +22,9 @@ import logging
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch  # codeql[py/unused-import] : suppressed via the security dashboard triage
+from unittest.mock import (
+    patch,
+)  # codeql[py/unused-import] : suppressed via the security dashboard triage
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SOURCE_ROOT))

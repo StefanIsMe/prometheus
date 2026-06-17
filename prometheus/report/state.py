@@ -17,12 +17,6 @@ from prometheus.report.writer import (
     write_run_record,
     write_vulnerabilities,
 )
-from prometheus.telemetry import (
-    posthog,
-)  # codeql[py/unsafe-cyclic-import] : telemetry → report → telemetry cycle broken at module load by the no-op stub modules
-from prometheus.telemetry import (
-    scarf,
-)  # codeql[py/unsafe-cyclic-import] : telemetry → report → telemetry cycle broken at module load by the no-op stub modules
 
 
 logger = logging.getLogger(__name__)
@@ -219,8 +213,6 @@ class ReportState:
 
         self.vulnerability_reports.append(report)
         logger.info("Added vulnerability report: %s - %s", report_id, title)
-        posthog.finding(severity)
-        scarf.finding(severity)
 
         if self.vulnerability_found_callback:
             self.vulnerability_found_callback(report)
@@ -272,8 +264,6 @@ class ReportState:
 
         logger.info("Updated scan final fields")
         self.save_run_data(mark_complete=True)
-        posthog.end(self, exit_reason="finished_by_tool")
-        scarf.end(self, exit_reason="finished_by_tool")
 
     def set_scan_config(self, config: dict[str, Any]) -> None:
         self.scan_config = config

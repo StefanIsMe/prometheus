@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-prometheus Agent Interface
+Prometheus Agent Interface
 """
 
 # Apply httpx zstd patch BEFORE any imports that trigger LiteLLM
@@ -53,7 +53,6 @@ from prometheus.interface.utils import (
     generate_run_name,
     image_exists,
     infer_target_type,
-    is_whitebox_scan,
     process_pull_line,
     resolve_diff_scope_context,
     rewrite_localhost_targets,
@@ -61,8 +60,7 @@ from prometheus.interface.utils import (
 )
 from prometheus.report.state import get_global_report_state
 from prometheus.report.writer import read_run_record, write_run_record
-from prometheus.telemetry import posthog, scarf
-from prometheus.telemetry.logging import configure_dependency_logging
+from prometheus.utils.logging import configure_dependency_logging
 
 
 HOST_GATEWAY_HOSTNAME = "host.docker.internal"
@@ -115,9 +113,9 @@ def validate_environment() -> None:
 
         error_text.append("\nRequired environment variables:\n", style="white")
         for var in missing_required_vars:
-            if var == "prometheus_LLM":
+            if var == "PROMETHEUS_LLM":
                 error_text.append("• ", style="white")
-                error_text.append("prometheus_LLM", style="bold cyan")
+                error_text.append("PROMETHEUS_LLM", style="bold cyan")
                 error_text.append(
                     " - Model name to use (e.g., 'gpt-5.4' or 'claude-sonnet-4-6')\n",
                     style="white",
@@ -142,9 +140,9 @@ def validate_environment() -> None:
                         style="white",
                     )
                 # PERPLEXITY_API_KEY removed — web_search uses free ddgs
-                elif var == "prometheus_REASONING_EFFORT":
+                elif var == "PROMETHEUS_REASONING_EFFORT":
                     error_text.append("• ", style="white")
-                    error_text.append("prometheus_REASONING_EFFORT", style="bold cyan")
+                    error_text.append("PROMETHEUS_REASONING_EFFORT", style="bold cyan")
                     error_text.append(
                         " - Reasoning effort level: none, minimal, low, medium, high, xhigh "
                         "(default: high)\n",
@@ -152,7 +150,7 @@ def validate_environment() -> None:
                     )
 
         error_text.append("\nExample setup:\n", style="white")
-        error_text.append("export prometheus_LLM='gpt-5.4'\n", style="dim white")
+        error_text.append("export PROMETHEUS_LLM='gpt-5.4'\n", style="dim white")
 
         if missing_optional_vars:
             for var in missing_optional_vars:
@@ -169,15 +167,15 @@ def validate_environment() -> None:
                         style="dim white",
                     )
                 # PERPLEXITY_API_KEY removed — web_search uses free ddgs
-                elif var == "prometheus_REASONING_EFFORT":
+                elif var == "PROMETHEUS_REASONING_EFFORT":
                     error_text.append(
-                        "export prometheus_REASONING_EFFORT='high'\n",
+                        "export PROMETHEUS_REASONING_EFFORT='high'\n",
                         style="dim white",
                     )
 
         panel = Panel(
             error_text,
-            title="[bold white]prometheus",
+            title="[bold white]Prometheus",
             title_align="left",
             border_style="red",
             padding=(1, 2),
@@ -208,7 +206,7 @@ def check_docker_installed() -> None:
 
         panel = Panel(
             error_text,
-            title="[bold white]prometheus",
+            title="[bold white]Prometheus",
             title_align="left",
             border_style="red",
             padding=(1, 2),
@@ -272,7 +270,7 @@ async def warm_up_llm() -> None:
 
         panel = Panel(
             error_text,
-            title="[bold white]prometheus",
+            title="[bold white]Prometheus",
             title_align="left",
             border_style="red",
             padding=(1, 2),
@@ -343,7 +341,7 @@ Examples:
         "-v",
         "--version",
         action="version",
-        version=f"prometheus {get_version()}",
+        version=f"Prometheus {get_version()}",
     )
 
     parser.add_argument(
@@ -646,7 +644,7 @@ def display_completion_message(args: argparse.Namespace, results_path: Path) -> 
 
     panel = Panel(
         panel_content,
-        title="[bold white]prometheus",
+        title="[bold white]Prometheus",
         title_align="left",
         border_style=border_style,
         padding=(1, 2),
@@ -655,7 +653,7 @@ def display_completion_message(args: argparse.Namespace, results_path: Path) -> 
     console.print("\n")
     console.print(panel)
     console.print()
-    console.print("[#60a5fa]prometheus[/]")
+    console.print("[#60a5fa]Prometheus[/]")
     console.print()
 
 
@@ -694,7 +692,7 @@ def pull_docker_image() -> None:
 
             panel = Panel(
                 error_text,
-                title="[bold white]prometheus",
+                title="[bold white]Prometheus",
                 title_align="left",
                 border_style="red",
                 padding=(1, 2),
@@ -1105,7 +1103,7 @@ def main() -> None:
 
             panel = Panel(
                 error_text,
-                title="[bold white]prometheus",
+                title="[bold white]Prometheus",
                 title_align="left",
                 border_style="red",
                 padding=(1, 2),
@@ -1129,15 +1127,6 @@ def main() -> None:
     # mode or inside run_cli() for non-interactive mode — both call
     # run_browser_prescan as the first step before the Docker sandbox scan.
 
-    _telemetry_start_kwargs = {
-        "model": load_settings().llm.model,
-        "is_whitebox": is_whitebox_scan(args.targets_info),
-        "interactive": not args.non_interactive,
-        "has_instructions": bool(args.instruction),
-    }
-    posthog.start(**_telemetry_start_kwargs)
-    scarf.start(**_telemetry_start_kwargs)
-
     exit_reason = "user_exit"
     try:
         if args.non_interactive:
@@ -1148,8 +1137,6 @@ def main() -> None:
         exit_reason = "interrupted"
     except Exception as e:
         exit_reason = "error"
-        posthog.error("unhandled_exception", str(e))
-        scarf.error("unhandled_exception", str(e))
         raise
     finally:
         report_state = get_global_report_state()
@@ -1159,8 +1146,6 @@ def main() -> None:
                 "stopped",
             )
             report_state.cleanup(status=status)
-            posthog.end(report_state, exit_reason=exit_reason)
-            scarf.end(report_state, exit_reason=exit_reason)
 
     results_path = run_dir_for(args.run_name)
     display_completion_message(args, results_path)

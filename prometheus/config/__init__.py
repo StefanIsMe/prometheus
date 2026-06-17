@@ -8,13 +8,6 @@ Public surface:
 - :func:`load_settings` — memoized resolve (env > JSON file > defaults).
 - :func:`apply_config_override` — switch the JSON source to a custom path.
 - :func:`persist_current` — write currently-set env vars to the active file.
-
-.. note::
-
-   This build is local-only. The ``TelemetrySettings`` model that
-   upstream once exposed has been removed because the
-   ``prometheus.telemetry.posthog`` and ``prometheus.telemetry.scarf``
-   modules are no-op stubs that make no network calls.
 """
 
 from prometheus.config.loader import (

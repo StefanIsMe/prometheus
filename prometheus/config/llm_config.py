@@ -565,7 +565,9 @@ def resolve_model(
                 continue
             if _is_key_circuit_broken(provider_name, key):
                 logger.debug(
-                    "Key %s:%s is circuit-broken, skipping", provider_name, key_short  # codeql[py/clear-text-logging-sensitive-data] : suppressed via the security dashboard triage
+                    "Key %s:%s is circuit-broken, skipping",
+                    provider_name,
+                    key_short,  # codeql[py/clear-text-logging-sensitive-data] : suppressed via the security dashboard triage
                 )  # codeql[py/clear-text-logging-sensitive-data] : key_short is the first 8 chars of the API key, used as a non-reversible identifier
                 continue
 
@@ -738,7 +740,12 @@ def _load_dotenv(path: Path) -> None:
         Fusion key) that would otherwise shadow the working .env value and
         cause 401 "User not found" errors.
       - All other vars use the standard "skip if already set" behavior so
-        user shell exports still win by default.
+        user shell exports still win by default. If a non-LLM key is already
+        set in the shell to a DIFFERENT value than the .env file, emit a
+        warning naming the key. The .env value is intentionally NOT applied
+        for non-LLM vars — the shell value wins — but the warning surfaces
+        drift (rotated keys, forgotten rc exports) before it bites as a
+        hard auth failure at request time.
 
     Skips the literal placeholder "***" so accidentally-committed masked
     values don't overwrite working env vars.
@@ -768,9 +775,27 @@ def _load_dotenv(path: Path) -> None:
                     )
                 os.environ[key] = val
             else:
-                # Non-LLM vars: respect existing shell exports.
+                # Non-LLM vars: respect existing shell exports; warn on drift.
                 if key not in os.environ:
                     os.environ[key] = val
+                elif os.environ[key] != val:
+                    # Truncate the values to first/last 4 chars for the log
+                    # so we don't dump full secrets to the scan log file.
+                    def _mask(v: str) -> str:
+                        if len(v) <= 12:
+                            return "***"
+                        return f"{v[:4]}...{v[-4:]} (len={len(v)})"
+
+                    logger.warning(
+                        "env var %s is set in shell to %s but %s has %s; "
+                        "shell value WINS, .env is ignored. "
+                        "Run `unset %s` to let .env take effect.",
+                        key,
+                        _mask(os.environ[key]),
+                        path,
+                        _mask(val),
+                        key,
+                    )
     except Exception:
         logger.debug("failed to load env vars, ignoring", exc_info=True)
 
