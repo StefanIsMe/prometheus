@@ -639,11 +639,20 @@ class VulnerabilitiesPanel(VerticalScroll):  # type: ignore[misc]
 
     def _render_panel(self) -> None:
         """Render the vulnerabilities panel content."""
+        # Clear all dynamic children (real items + the empty-state marker).
+        # Both classes are owned by this render path; leaving agent_status
+        # etc. alone is safe because they aren't mounted as children here.
         for child in list(self.children):
-            if isinstance(child, VulnerabilityItem):
+            if isinstance(child, (VulnerabilityItem, Static)):
                 child.remove()
 
         if not self._vulnerabilities:
+            empty = Static(
+                "\n    🛡\n\n  No findings yet.",
+                classes="vuln-empty",
+                id="vulnerabilities_empty",
+            )
+            self.mount(empty)
             return
 
         for vuln in self._vulnerabilities:
@@ -929,6 +938,7 @@ class prometheusTUIApp(App):  # type: ignore[misc]
             stats_scroll.border_title = "LLM"
 
             vulnerabilities_panel = VulnerabilitiesPanel(id="vulnerabilities_panel")
+            vulnerabilities_panel.border_title = "Vulnerabilities"
 
             sidebar = Vertical(agents_tree, vulnerabilities_panel, stats_scroll, id="sidebar")
 
@@ -1591,11 +1601,7 @@ class prometheusTUIApp(App):  # type: ignore[misc]
 
         vulnerabilities = self.report_state.vulnerability_reports
 
-        if not vulnerabilities:
-            self._safe_widget_operation(vuln_panel.add_class, "hidden")
-            return
-
-        enriched_vulns = []
+        enriched_vulns: list[dict[str, Any]] = []
         for vuln in vulnerabilities:
             enriched = dict(vuln)
             agent_name = enriched.get("agent_name")
@@ -1606,7 +1612,8 @@ class prometheusTUIApp(App):  # type: ignore[misc]
                 enriched["agent_name"] = agent_name
             enriched_vulns.append(enriched)
 
-        self._safe_widget_operation(vuln_panel.remove_class, "hidden")
+        # The panel is always visible now; an empty list just renders the
+        # empty-state placeholder inside VulnerabilitiesPanel._render_panel.
         vuln_panel.update_vulnerabilities(enriched_vulns)
 
     def _maybe_refresh_reports_tab(self) -> None:
