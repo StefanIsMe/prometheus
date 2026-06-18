@@ -1,0 +1,136 @@
+# Prometheus LLM Configuration Examples
+
+The new per-provider helper layout (see
+`prometheus/config/providers/`) means most providers only need a name
+and a model id; the helper supplies the base URL, env-var fallback,
+and any provider-specific quirks (like the OpenRouter → DeepSeek
+tool_choice quirk).
+
+## TokenRouter (default)
+
+```yaml
+providers:
+  tokenrouter:
+    api_keys:
+      - env: TOKENROUTER_API_KEY
+    models:
+      MiniMax-M3:
+        tier: hard
+        max_tokens: 256000
+        context_window: 524288
+        supports_thinking: true
+
+routing:
+  simple:  [tokenrouter/MiniMax-M3]
+  medium:  [tokenrouter/MiniMax-M3]
+  hard:    [tokenrouter/MiniMax-M3]
+
+defaults:
+  tier: hard
+```
+
+## OpenRouter (with openrouter/auto router)
+
+`openrouter/auto` is automatically flagged with
+`drop_tool_choice_with_thinking=True` and `force_store_false=True`
+because the upstream is unknown at config time and may be DeepSeek.
+
+```yaml
+providers:
+  openrouter:
+    api_keys:
+      - env: OPENROUTER_API_KEY
+    models:
+      openrouter/auto:
+        tier: hard
+        max_tokens: 65536
+      anthropic/claude-sonnet-4-6:
+        tier: standard
+
+routing:
+  hard:     [openrouter/openrouter/auto]
+  standard: [openrouter/anthropic/claude-sonnet-4-6]
+```
+
+## DeepSeek
+
+```yaml
+providers:
+  deepseek:
+    api_keys:
+      - env: DEEPSEEK_API_KEY
+    models:
+      deepseek-chat:
+        tier: medium
+      deepseek-reasoner:
+        tier: hard
+        supports_thinking: true
+```
+
+## Anthropic (Messages API)
+
+```yaml
+providers:
+  anthropic:
+    api_keys:
+      - env: ANTHROPIC_API_KEY
+    models:
+      claude-sonnet-4-6:
+        tier: standard
+```
+
+## Custom endpoint (any OpenAI- or Anthropic-compatible vendor)
+
+Use `custom` (or set `type: custom` on a named provider) when the
+provider is not in the registry. You pick the protocol explicitly.
+
+```yaml
+providers:
+  # OpenAI-compatible internal proxy
+  internal-gateway:
+    type: custom
+    base_url: https://llm.internal/v1
+    protocol: openai            # or: anthropic
+    api_keys:
+      - env: MY_GATEWAY_KEY
+    extra_headers:
+      X-Org: acme
+    models:
+      llama-3.1-70b-internal:
+        tier: hard
+
+  # Or, equivalently, use the generic "custom" provider
+  custom:
+    base_url: https://self-hosted-litellm/v1
+    protocol: openai
+    api_keys:
+      - env: LITELLM_KEY
+    models:
+      mixtral-8x7b:
+        tier: medium
+```
+
+## Opting out of a named helper
+
+If a provider name collides with a helper (e.g. you want
+`openrouter` with a non-default base URL and none of its default
+quirks), set `type: custom`:
+
+```yaml
+providers:
+  openrouter:
+    type: custom
+    base_url: https://my-fork.example/v1
+    protocol: openai
+    models:
+      openrouter/auto:
+        tier: hard
+```
+
+## Adding a new provider
+
+1. Drop a `myprovider.py` next to `tokenrouter.py`.
+2. Implement `build_helper()` returning a `ProviderHelper`.
+3. Register it in `prometheus/config/providers/__init__.py`.
+
+The loader picks it up automatically; no other wiring required.

@@ -210,9 +210,27 @@ def load_llm_config(path: Path | None = None) -> LlmConfig:
 
 
 def _parse_config(raw: dict[str, Any], path: Path) -> LlmConfig:
-    """Parse raw YAML into LlmConfig."""
+    """Parse raw YAML into LlmConfig.
+
+    Per-provider quirks live in :mod:`prometheus.config.providers`. If a
+    provider name has a registered helper, the helper builds the
+    ``ProviderConfig`` and any model-option overrides it wants merged
+    into the global table. Unknown provider names fall back to the
+    inline parser below (with the ``type: custom`` YAML key as the
+    canonical "I know what I'm doing" override).
+    """
+    # Late import so the helper package can use the dataclasses defined
+    # above without creating a circular import at module-load time.
+    from prometheus.config.providers import (
+        ProviderParseResult,
+        get_helper,
+        is_known_provider,
+    )
+    from prometheus.config.model_options import MODEL_OPTIONS, ModelOptionOverrides
+
     providers: dict[str, ProviderConfig] = {}
     routing: dict[Tier, TierRouting] = {}
+    pending_model_overrides: dict[str, ModelOptionOverrides] = {}
 
     # Parse providers
     providers_raw = raw.get("providers", {})
@@ -221,103 +239,40 @@ def _parse_config(raw: dict[str, Any], path: Path) -> LlmConfig:
             if not isinstance(pdata, dict):
                 continue
             pdata = dict(pdata)  # type narrowing
+            pdata["__name"] = name  # helpers read this
 
-            base_url = str(pdata.get("base_url", "")).strip()
-            if not base_url:
-                logger.warning("Provider %s has no base_url, skipping", name)
-                continue
-
-            protocol_str = str(pdata.get("protocol", "openai")).lower()
-            try:
-                protocol = Protocol(protocol_str)
-            except ValueError:
-                logger.warning(
-                    "Unknown protocol '%s' for provider %s, defaulting to openai",
-                    protocol_str,
-                    name,
-                )
-                protocol = Protocol.OPENAI
-
-            # Rewrite dual-protocol base_urls
-            base_url = _rewrite_dual_protocol(name, base_url)
-
-            # Resolve API keys
-            api_keys_raw = pdata.get("api_keys", [])
-            if isinstance(api_keys_raw, list):
-                api_keys = []
-                for entry in api_keys_raw:
-                    key = _resolve_api_key(entry)
-                    if key:
-                        api_keys.append(key)
-            else:
-                # Single key as string
-                key = _resolve_api_key(api_keys_raw)
-                api_keys = [key] if key else []
-
-            # If no keys from config, try env var convention
-            if not api_keys:
-                env_name = _PROVIDER_ENV_KEY_MAP.get(name.lower())
-                if env_name:
-                    env_val = os.environ.get(env_name)
-                    if env_val:
-                        api_keys.append(env_val)
-
-            # Fallback: Nous OAuth token from auth store
-            # (Nous OAuth removed; rely on env-provided NOUS_API_KEY instead.)
-            if not api_keys and name.lower() == "nous":
-                logger.debug(
-                    "Nous OAuth removed; expecting NOUS_API_KEY in env for provider '%s'", name
-                )
-
-            # Extra headers
-            extra_headers = {}
-            headers_raw = pdata.get("extra_headers", {})
-            if isinstance(headers_raw, dict):
-                extra_headers = {str(k): str(v) for k, v in headers_raw.items()}
-
-            # Parse models
-            models: dict[str, ModelSpec] = {}
-            models_raw = pdata.get("models", {})
-            if isinstance(models_raw, dict):
-                for model_id, mdata in models_raw.items():
-                    if isinstance(mdata, dict):
-                        tier_str = str(mdata.get("tier", "medium")).lower()
-                        try:
-                            tier = Tier(tier_str)
-                        except ValueError:
-                            tier = Tier.MEDIUM
-                        models[str(model_id)] = ModelSpec(
-                            provider_name=name,
-                            model_id=str(model_id),
-                            tier=tier,
-                            max_tokens=int(mdata.get("max_tokens", 8192)),
-                            supports_thinking=bool(mdata.get("supports_thinking", False)),
-                            context_window=(
-                                int(mdata["context_window"])
-                                if mdata.get("context_window") is not None
-                                else None
-                            ),
+            helper = get_helper(name)
+            if helper is not None:
+                # The user can still force the inline parser by setting
+                # ``type: custom`` — useful when a vendor's name
+                # collides with a helper (e.g. they want a non-default
+                # ``base_url`` without the helper's defaults).
+                if str(pdata.get("type", "")).strip().lower() != "custom":
+                    try:
+                        result: ProviderParseResult = helper(pdata)
+                    except Exception as exc:
+                        logger.warning(
+                            "Provider helper for %s failed (%s); falling back to inline parser",
+                            name,
+                            exc,
                         )
-                    elif isinstance(mdata, str):
-                        # Shorthand: model_id: tier
-                        try:
-                            tier = Tier(str(mdata).lower())
-                        except ValueError:
-                            tier = Tier.MEDIUM
-                        models[str(model_id)] = ModelSpec(
-                            provider_name=name,
-                            model_id=str(model_id),
-                            tier=tier,
-                        )
+                    else:
+                        providers[name] = result.provider
+                        for model_id, opts in result.model_option_overrides.items():
+                            base = MODEL_OPTIONS.get(model_id, ModelOptionOverrides())
+                            merged = ModelOptionOverrides(**{**base.__dict__, **opts})
+                            pending_model_overrides[model_id] = merged
+                        continue
 
-            providers[name] = ProviderConfig(
-                name=name,
-                base_url=base_url,
-                protocol=protocol,
-                api_keys=api_keys,
-                models=models,
-                extra_headers=extra_headers,
-            )
+            providers[name] = _parse_inline_provider(name, pdata)
+
+    # Merge helper-supplied overrides into the global MODEL_OPTIONS table
+    # so the harness's existing per-model lookup picks them up. The
+    # loader is the single source of truth here — model_options.py
+    # imports MODEL_OPTIONS by reference, so we mutate in place.
+    if pending_model_overrides:
+        for model_id, overrides in pending_model_overrides.items():
+            MODEL_OPTIONS[model_id] = overrides
 
     # Parse routing
     routing_raw = raw.get("routing", {})
@@ -366,6 +321,111 @@ def _parse_config(raw: dict[str, Any], path: Path) -> LlmConfig:
     )
     _validate_config(config)
     return config
+
+
+def _parse_inline_provider(name: str, pdata: dict[str, Any]) -> ProviderConfig:
+    """Inline parser for providers without a registered helper.
+
+    Kept verbatim from the previous ``_parse_config`` body so existing
+    configs (``type: custom`` in particular) continue to work without
+    any helper in the registry.
+    """
+    base_url = str(pdata.get("base_url", "")).strip()
+    if not base_url:
+        logger.warning("Provider %s has no base_url, skipping", name)
+        # Return a placeholder config so the loader still records the
+        # name — downstream routing will warn about it later.
+        return ProviderConfig(
+            name=name,
+            base_url="",
+            protocol=Protocol.OPENAI,
+            api_keys=[],
+            models={},
+            extra_headers={},
+        )
+
+    protocol_str = str(pdata.get("protocol", "openai")).lower()
+    try:
+        protocol = Protocol(protocol_str)
+    except ValueError:
+        logger.warning(
+            "Unknown protocol '%s' for provider %s, defaulting to openai",
+            protocol_str,
+            name,
+        )
+        protocol = Protocol.OPENAI
+
+    # Rewrite dual-protocol base_urls
+    base_url = _rewrite_dual_protocol(name, base_url)
+
+    # Resolve API keys
+    api_keys_raw = pdata.get("api_keys", [])
+    if isinstance(api_keys_raw, list):
+        api_keys = []
+        for entry in api_keys_raw:
+            key = _resolve_api_key(entry)
+            if key:
+                api_keys.append(key)
+    else:
+        key = _resolve_api_key(api_keys_raw)
+        api_keys = [key] if key else []
+
+    if not api_keys:
+        env_name = _PROVIDER_ENV_KEY_MAP.get(name.lower())
+        if env_name:
+            env_val = os.environ.get(env_name)
+            if env_val:
+                api_keys.append(env_val)
+
+    if not api_keys and name.lower() == "nous":
+        logger.debug("Nous OAuth removed; expecting NOUS_API_KEY in env for provider '%s'", name)
+
+    extra_headers: dict[str, str] = {}
+    headers_raw = pdata.get("extra_headers", {})
+    if isinstance(headers_raw, dict):
+        extra_headers = {str(k): str(v) for k, v in headers_raw.items()}
+
+    models: dict[str, ModelSpec] = {}
+    models_raw = pdata.get("models", {})
+    if isinstance(models_raw, dict):
+        for model_id, mdata in models_raw.items():
+            if isinstance(mdata, dict):
+                tier_str = str(mdata.get("tier", "medium")).lower()
+                try:
+                    tier = Tier(tier_str)
+                except ValueError:
+                    tier = Tier.MEDIUM
+                models[str(model_id)] = ModelSpec(
+                    provider_name=name,
+                    model_id=str(model_id),
+                    tier=tier,
+                    max_tokens=int(mdata.get("max_tokens", 8192)),
+                    supports_thinking=bool(mdata.get("supports_thinking", False)),
+                    context_window=(
+                        int(mdata["context_window"])
+                        if mdata.get("context_window") is not None
+                        else None
+                    ),
+                )
+            elif isinstance(mdata, str):
+                try:
+                    tier = Tier(str(mdata).lower())
+                except ValueError:
+                    tier = Tier.MEDIUM
+                models[str(model_id)] = ModelSpec(
+                    provider_name=name,
+                    model_id=str(model_id),
+                    tier=tier,
+                )
+
+    return ProviderConfig(
+        name=name,
+        base_url=base_url,
+        protocol=protocol,
+        api_keys=api_keys,
+        models=models,
+        extra_headers=extra_headers,
+    )
 
 
 def _auto_build_routing(providers: dict[str, ProviderConfig]) -> dict[Tier, TierRouting]:
