@@ -546,11 +546,14 @@ AddNoteDialog {
 
 #vulnerabilities_panel {
     height: auto;
-    max-height: 12;
+    min-height: 7;
     background: transparent;
     padding: 0;
-    margin: 0;
+    margin-top: 1;
     border: round #333333;
+    border-title-color: #d97706;
+    border-title-style: bold;
+    border-title-align: left;
     overflow-y: auto;
     scrollbar-background: #000000;
     scrollbar-color: #333333;
@@ -558,8 +561,12 @@ AddNoteDialog {
     scrollbar-size-vertical: 1;
 }
 
-#vulnerabilities_panel.hidden {
-    display: none;
+.vuln-empty {
+    height: auto;
+    width: 100%;
+    padding: 1 0;
+    color: #737373;
+    text-align: center;
 }
 
 .target-domain-header {
