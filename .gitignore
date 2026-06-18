@@ -163,8 +163,13 @@ CLAUDE.md
 bandit.json
 bandit-out/
 
-# ── CI / Infra (kept private, not published to the repo) ────────────────
-.github/
+# Local-only atomic PR tooling (not for the public repo)
+scripts/atomic_pr.py
+tests/test_atomic_pr.py
+
+# ── CI / Infra ──────────────────────────────────────────────────────────
+# GitHub Actions workflows and Dependabot config ARE tracked (restored
+# in commit that followed the .github/ unignore).
 .gitlab-ci.yml
 .circleci/
 .travis.yml
